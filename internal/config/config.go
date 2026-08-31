@@ -118,11 +118,11 @@ type Satellite struct {
 }
 
 type Scheduling struct {
-	DaysAhead             int  `yaml:"days_ahead"`
-	ResolveOverlaps       bool `yaml:"resolve_overlaps"`
-	PreferMeteorOverNOAA  bool `yaml:"prefer_meteor_over_noaa"`
-	TLERefreshHourUTC     int  `yaml:"tle_refresh_hour_utc"`
-	DryRun                bool `yaml:"dry_run"` // plan passes but never start captures (M1 side-by-side mode)
+	DaysAhead            int  `yaml:"days_ahead"`
+	ResolveOverlaps      bool `yaml:"resolve_overlaps"`
+	PreferMeteorOverNOAA bool `yaml:"prefer_meteor_over_noaa"`
+	TLERefreshHourUTC    int  `yaml:"tle_refresh_hour_utc"`
+	DryRun               bool `yaml:"dry_run"` // plan passes but never start captures (M1 side-by-side mode)
 }
 
 type Capture struct {
@@ -146,12 +146,12 @@ type NOAAProcessing struct {
 }
 
 type MeteorProcessing struct {
-	DayEnhancements        []string `yaml:"day_enhancements"`
-	NightEnhancements      []string `yaml:"night_enhancements"`
-	JPGQuality             int      `yaml:"jpg_quality"`
-	FlipNorthbound         bool     `yaml:"flip_northbound"`
-	DrawMapOverlay         bool     `yaml:"draw_map_overlay"`
-	EquidistantProjection  bool     `yaml:"equidistant_projection"`
+	DayEnhancements       []string `yaml:"day_enhancements"`
+	NightEnhancements     []string `yaml:"night_enhancements"`
+	JPGQuality            int      `yaml:"jpg_quality"`
+	FlipNorthbound        bool     `yaml:"flip_northbound"`
+	DrawMapOverlay        bool     `yaml:"draw_map_overlay"`
+	EquidistantProjection bool     `yaml:"equidistant_projection"`
 }
 
 type Retention struct {

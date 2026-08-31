@@ -17,19 +17,23 @@ import (
 	"github.com/perhp/rnv3/internal/store"
 )
 
-// PostProcessor turns SatDump's raw products in workDir into final imagery.
-// M3 provides the real pipeline (rename/flip/dedup/normalize/thumbnail); the
-// InventoryProcessor below is the M2 placeholder.
+// PostProcessor turns SatDump's raw products in workDir into final imagery
+// (implemented by process.Pipeline; InventoryProcessor is the test/fallback
+// implementation).
 type PostProcessor interface {
-	// Process returns how many images were produced for the pass.
-	Process(ctx context.Context, p store.Pass, sat config.Satellite, workDir, fileBase string) (int, error)
+	// Process returns how many satellite images were produced for the pass.
+	Process(ctx context.Context, p store.Pass, sat config.Satellite, workDir, fileBase string, daylight bool) (int, error)
+	// UpdateAggregates rebuilds station-wide artifacts (sky map, daily
+	// mosaics/timelapses). Called after the pass reached its terminal DB
+	// state so the aggregates include it.
+	UpdateAggregates(ctx context.Context, passStart time.Time)
 }
 
 // InventoryProcessor counts the PNGs SatDump produced without transforming
-// them — enough to drive the decoded/failed decision until M3 lands.
+// them — drives the decoded/failed decision without the image pipeline.
 type InventoryProcessor struct{}
 
-func (InventoryProcessor) Process(_ context.Context, _ store.Pass, _ config.Satellite, workDir, _ string) (int, error) {
+func (InventoryProcessor) Process(_ context.Context, _ store.Pass, _ config.Satellite, workDir, _ string, _ bool) (int, error) {
 	count := 0
 	err := filepath.WalkDir(workDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
@@ -42,6 +46,8 @@ func (InventoryProcessor) Process(_ context.Context, _ store.Pass, _ config.Sate
 	})
 	return count, err
 }
+
+func (InventoryProcessor) UpdateAggregates(context.Context, time.Time) {}
 
 // watchdogSlack is added to the capture duration as the hard process
 // deadline; RN2 gave Meteor 900s of decode slack and NOAA none — rnv3 applies
@@ -113,7 +119,7 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 	recording := r.handleRecording(cfg, p, sat, workDir, fileBase, log)
 
 	images := 0
-	if procN, err := r.Processor.Process(ctx, p, sat, workDir, fileBase); err != nil {
+	if procN, err := r.Processor.Process(ctx, p, sat, workDir, fileBase, daylight); err != nil {
 		log.Error("post-processing failed", "err", err)
 	} else {
 		images = procN
@@ -138,6 +144,10 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 		r.fail(p.ID, withExitInfo("decoder produced no images", runErr))
 		r.cleanupWorkDir(workDir, false)
 	}
+
+	// After the terminal state, so the sky map / daily artifacts include this
+	// pass — decoded or failed.
+	r.Processor.UpdateAggregates(ctx, time.Unix(p.StartTS, 0))
 }
 
 // runSatdump executes satdump with a hard deadline, streaming its combined

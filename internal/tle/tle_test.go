@@ -49,7 +49,7 @@ func TestValidateLinesRejectsCorruption(t *testing.T) {
 		"short line":       {tl.Line1[:60], tl.Line2},
 		"wrong prefix":     {"3" + tl.Line1[1:], tl.Line2},
 		"id mismatch":      {strings.Replace(tl.Line1, "33591", "25338", 1), tl.Line2},
-		"garbage numerics": {tl.Line1, fixChecksum(t, testLine2Body[:8] + "XX9.1900" + testLine2Body[16:])},
+		"garbage numerics": {tl.Line1, fixChecksum(t, testLine2Body[:8]+"XX9.1900"+testLine2Body[16:])},
 		"garbage ndot":     {badNdot, tl.Line2},
 		"garbage nddot":    {badNddot, tl.Line2},
 		"garbage bstar":    {badBstar, tl.Line2},

@@ -212,6 +212,39 @@ func TestRunnerNoRecordingFails(t *testing.T) {
 	}
 }
 
+// stateCheckProcessor records the pass state as seen from UpdateAggregates,
+// proving the runner finalizes the DB row before aggregates rebuild.
+type stateCheckProcessor struct {
+	InventoryProcessor
+	st        *store.Store
+	passID    int64
+	seenState string
+}
+
+func (p *stateCheckProcessor) UpdateAggregates(_ context.Context, _ time.Time) {
+	p.st.DB.QueryRow(`SELECT state FROM passes WHERE id = ?`, p.passID).Scan(&p.seenState)
+}
+
+func TestRunnerAggregatesRunAfterTerminalState(t *testing.T) {
+	// Decoded path.
+	r, cfg, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
+	proc := &stateCheckProcessor{st: st, passID: p.ID}
+	r.Processor = proc
+	r.Run(context.Background(), p, cfg.Satellites[2])
+	if proc.seenState != store.StateDecoded {
+		t.Errorf("UpdateAggregates saw state %q, want decoded", proc.seenState)
+	}
+
+	// Failed path: aggregates still run, after the failed state landed.
+	r2, cfg2, st2, p2 := testRunner(t, "no-recording", config.Default().Satellites[2])
+	proc2 := &stateCheckProcessor{st: st2, passID: p2.ID}
+	r2.Processor = proc2
+	r2.Run(context.Background(), p2, cfg2.Satellites[2])
+	if proc2.seenState != store.StateFailed {
+		t.Errorf("UpdateAggregates saw state %q, want failed", proc2.seenState)
+	}
+}
+
 func TestRunnerLateFireFails(t *testing.T) {
 	r, cfg, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
 	p.EndTS = time.Now().Unix() - 10 // window already over

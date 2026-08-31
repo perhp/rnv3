@@ -221,6 +221,10 @@ binary, unit file, udev rules, directories, SatDump.
 - [ ] **M3 — Processing**: rename/flip/dedup rules ported exactly (they encode hard-won
   SatDump-output knowledge), thumbnails, polar SVGs, sky map, mosaics/timelapses.
   *Exit: artifacts visually match current output for the same pass.*
+  (Code complete 2026-09-01: rules ported line-by-line from the receive scripts, pure-Go
+  imaging, images registered in DB, NOAA website thumbnail fixed, polar/sky map as SVG,
+  satdump_cfg.json generated from the VERBATIM embedded .j2 via a strict mini-renderer.
+  Visual-parity check against RN2 output happens at first Pi deploy.)
 - [ ] **M4 — Web UI port**: templates + API + SSE terminal + admin + RSS; the migration importer,
   so the UI is tested against real history. *Exit: feature-parity walkthrough against the PHP panel.*
 - [ ] **M5 — Notifications, watchdog, retention, best-of-day.**

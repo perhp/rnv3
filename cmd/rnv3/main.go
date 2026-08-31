@@ -20,6 +20,8 @@ import (
 
 	"github.com/perhp/rnv3/internal/capture"
 	"github.com/perhp/rnv3/internal/config"
+	"github.com/perhp/rnv3/internal/process"
+	"github.com/perhp/rnv3/internal/satdumpcfg"
 	"github.com/perhp/rnv3/internal/sched"
 	"github.com/perhp/rnv3/internal/store"
 	"github.com/perhp/rnv3/internal/tle"
@@ -82,9 +84,12 @@ func run(configPath string, checkOnly bool) error {
 	prov := config.NewProvider(cfg)
 	errCh := make(chan error, 3)
 
+	syncSatdumpCfg(prov)
+
 	tleMgr := tle.NewManager(cfg.Paths.DataDir)
+	pipeline := &process.Pipeline{Prov: prov, St: st, TLEs: tleMgr}
 	// Note: dry_run selects the runner at startup; toggling it requires a restart.
-	var runner sched.CaptureRunner = &capture.Runner{Prov: prov, St: st, Processor: capture.InventoryProcessor{}}
+	var runner sched.CaptureRunner = &capture.Runner{Prov: prov, St: st, Processor: pipeline}
 	if cfg.Scheduling.DryRun {
 		runner = &sched.NotImplementedRunner{St: st, DryRun: true}
 	}
@@ -171,11 +176,25 @@ func run(configPath string, checkOnly bool) error {
 				fresh.Paths.DataDir = cur.Paths.DataDir
 			}
 			prov.Set(fresh)
+			syncSatdumpCfg(prov)
 			slog.Info("config reloaded, replanning passes")
 			scheduler.Replan()
 		case err := <-errCh:
 			return err
 		}
+	}
+}
+
+// syncSatdumpCfg regenerates SatDump's config from the enhancement token
+// lists / map settings. Non-fatal: captures still run against whatever
+// satdump_cfg.json exists (e.g. on a dev machine without SatDump).
+func syncSatdumpCfg(prov *config.Provider) {
+	wrote, err := satdumpcfg.Sync(prov.Get())
+	switch {
+	case err != nil:
+		slog.Warn("cannot sync satdump_cfg.json", "err", err)
+	case wrote:
+		slog.Info("satdump_cfg.json regenerated", "path", prov.Get().Paths.SatdumpConfig)
 	}
 }
 

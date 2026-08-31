@@ -35,6 +35,18 @@ else
   sudo chmod 0600 /etc/rnv3/config.yaml
 fi
 
+echo "==> SatDump config ownership"
+# The daemon regenerates satdump_cfg.json from the enhancement settings
+# (Ansible used to write it as root in RN2). The atomic write creates a temp
+# file next to it, so the service user must own the DIRECTORY, not just the
+# file — otherwise the first content change fails with permission denied.
+if [ -d /usr/share/satdump ]; then
+  sudo chown "$USER:$USER" /usr/share/satdump
+  if [ -f /usr/share/satdump/satdump_cfg.json ]; then
+    sudo chown "$USER:$USER" /usr/share/satdump/satdump_cfg.json
+  fi
+fi
+
 echo "==> Directories"
 sudo mkdir -p /var/lib/rnv3 /srv/images/thumb /srv/audio/noaa /srv/audio/meteor /srv/work
 sudo chown -R "$USER:$USER" /var/lib/rnv3 /srv/images /srv/audio /srv/work

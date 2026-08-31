@@ -55,9 +55,9 @@ func ValidateLines(line1, line2 string, wantID int) error {
 	}
 	// Numeric fields at the exact columns go-satellite slices.
 	numeric := []struct {
-		line  string
+		line   string
 		lo, hi int
-		name  string
+		name   string
 	}{
 		{line1, 18, 20, "epoch year"},
 		{line1, 20, 32, "epoch days"},

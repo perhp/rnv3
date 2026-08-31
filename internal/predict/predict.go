@@ -116,6 +116,31 @@ func refineCrossing(sat sgp4.Satellite, obs Observer, below, above time.Time, ri
 	return above
 }
 
+// Sample is one look-angle observation on a pass track.
+type Sample struct {
+	Time      time.Time
+	Azimuth   float64 // degrees
+	Elevation float64 // degrees
+}
+
+// Track samples the satellite's look angles from the observer over [from, to]
+// at the given step — the data source for polar pass plots.
+func Track(t tle.TLE, obs Observer, from, to time.Time, step time.Duration) ([]Sample, error) {
+	if err := tle.ValidateLines(t.Line1, t.Line2, t.NoradID); err != nil {
+		return nil, fmt.Errorf("refusing to propagate invalid TLE for %d: %w", t.NoradID, err)
+	}
+	if step <= 0 {
+		step = time.Second
+	}
+	sat := sgp4.TLEToSat(t.Line1, t.Line2, sgp4.GravityWGS84)
+	var out []Sample
+	for cur := from; !cur.After(to); cur = cur.Add(step) {
+		el, az := lookAngles(sat, obs, cur)
+		out = append(out, Sample{Time: cur, Azimuth: az, Elevation: el})
+	}
+	return out, nil
+}
+
 // lookAngles returns elevation and azimuth in degrees at time tt.
 func lookAngles(sat sgp4.Satellite, obs Observer, tt time.Time) (elevation, azimuth float64) {
 	u := tt.UTC()
