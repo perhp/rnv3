@@ -23,6 +23,7 @@ satellites:
   - name: NOAA 15
     type: noaa-apt
     norad_id: 25338
+    satellite_number: 15           # SatDump --satellite_number (NOAA APT only)
     frequency_mhz: 137.6200
     enabled: false
     gain: 29.7                     # 0 = auto
@@ -33,6 +34,7 @@ satellites:
   - name: NOAA 18
     type: noaa-apt
     norad_id: 28654
+    satellite_number: 18
     frequency_mhz: 137.9125
     enabled: false
     gain: 29.7
@@ -43,6 +45,7 @@ satellites:
   - name: NOAA 19
     type: noaa-apt
     norad_id: 33591
+    satellite_number: 19
     frequency_mhz: 137.1000
     enabled: false
     gain: 29.7

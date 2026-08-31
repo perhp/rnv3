@@ -18,6 +18,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/term"
 
+	"github.com/perhp/rnv3/internal/capture"
 	"github.com/perhp/rnv3/internal/config"
 	"github.com/perhp/rnv3/internal/sched"
 	"github.com/perhp/rnv3/internal/store"
@@ -79,7 +80,11 @@ func run(configPath string, checkOnly bool) error {
 	slog.Info("database ready", "path", dbPath, "schema_version", schemaVer)
 
 	tleMgr := tle.NewManager(cfg.Paths.DataDir)
-	scheduler := sched.New(cfg, st, tleMgr, &sched.NotImplementedRunner{St: st, DryRun: cfg.Scheduling.DryRun})
+	var runner sched.CaptureRunner = &capture.Runner{Cfg: cfg, St: st, Processor: capture.InventoryProcessor{}}
+	if cfg.Scheduling.DryRun {
+		runner = &sched.NotImplementedRunner{St: st, DryRun: true}
+	}
+	scheduler := sched.New(cfg, st, tleMgr, runner)
 	schedCtx, cancelSched := context.WithCancel(context.Background())
 	defer cancelSched()
 	go func() {

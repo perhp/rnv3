@@ -100,6 +100,8 @@ type Satellite struct {
 	ScheduleSunMinElevation *float64 `yaml:"schedule_sun_min_elevation,omitempty"`
 	// Interleaving80k selects the meteor_m2-x_lrpt_80k pipeline.
 	Interleaving80k bool `yaml:"interleaving_80k,omitempty"`
+	// SatelliteNumber is SatDump's --satellite_number (NOAA APT only: 15/18/19).
+	SatelliteNumber int `yaml:"satellite_number,omitempty"`
 }
 
 type Scheduling struct {
@@ -279,9 +281,9 @@ func Default() *Config {
 		},
 		SDR: SDR{Type: "rtlsdr"},
 		Satellites: []Satellite{
-			{Name: "NOAA 15", Type: SatNOAAAPT, NoradID: 25338, FrequencyMHz: 137.6200, Gain: 29.7, SunMinElevation: 6, MinElevation: 30},
-			{Name: "NOAA 18", Type: SatNOAAAPT, NoradID: 28654, FrequencyMHz: 137.9125, Gain: 29.7, SunMinElevation: 6, MinElevation: 30},
-			{Name: "NOAA 19", Type: SatNOAAAPT, NoradID: 33591, FrequencyMHz: 137.1000, Gain: 29.7, SunMinElevation: 6, MinElevation: 30},
+			{Name: "NOAA 15", Type: SatNOAAAPT, NoradID: 25338, FrequencyMHz: 137.6200, Gain: 29.7, SunMinElevation: 6, MinElevation: 30, SatelliteNumber: 15},
+			{Name: "NOAA 18", Type: SatNOAAAPT, NoradID: 28654, FrequencyMHz: 137.9125, Gain: 29.7, SunMinElevation: 6, MinElevation: 30, SatelliteNumber: 18},
+			{Name: "NOAA 19", Type: SatNOAAAPT, NoradID: 33591, FrequencyMHz: 137.1000, Gain: 29.7, SunMinElevation: 6, MinElevation: 30, SatelliteNumber: 19},
 			{Name: "METEOR-M2 3", Type: SatMeteorLRPT, NoradID: 57166, FrequencyMHz: 137.9000, Enabled: true, Gain: 40.2, SunMinElevation: 6, MinElevation: 30, ScheduleSunMinElevation: &meteorScheduleGate},
 			{Name: "METEOR-M2 4", Type: SatMeteorLRPT, NoradID: 59051, FrequencyMHz: 137.9000, Enabled: true, Gain: 40.2, SunMinElevation: 6, MinElevation: 30, ScheduleSunMinElevation: &meteorScheduleGate},
 		},
@@ -405,6 +407,9 @@ func (c *Config) Validate() error {
 		}
 		if s.MinElevation < 0 || s.MinElevation > 90 {
 			add("satellites[%d] (%s): min_elevation %v out of range [0, 90]", i, s.Name, s.MinElevation)
+		}
+		if s.Type == SatNOAAAPT && (s.SatelliteNumber < 1 || s.SatelliteNumber > 99) {
+			add("satellites[%d] (%s): satellite_number is required for noaa-apt (SatDump --satellite_number)", i, s.Name)
 		}
 		if s.Enabled {
 			enabled++

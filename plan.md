@@ -215,6 +215,9 @@ binary, unit file, udev rules, directories, SatDump.
 - [ ] **M2 — Capture & decode**: SatDump runner with per-SDR profiles, work dirs, state machine,
   SNR/frame stats, ramfs logic. *Exit: a real NOAA and a real Meteor pass decoded end-to-end by
   rnv3 (old system paused during the test).*
+  (Code complete 2026-08-31: arg builder for the full SDR matrix, per-pass work dirs, uniform
+  watchdog deadline, Go CADU parser, live SNR parsing, audio retention; end-to-end tested against
+  a fake SatDump. Real-pass validation happens at first Pi deploy, together with M1's comparison.)
 - [ ] **M3 — Processing**: rename/flip/dedup rules ported exactly (they encode hard-won
   SatDump-output knowledge), thumbnails, polar SVGs, sky map, mosaics/timelapses.
   *Exit: artifacts visually match current output for the same pass.*

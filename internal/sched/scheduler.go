@@ -125,6 +125,11 @@ func (s *Scheduler) plan(ctx context.Context) error {
 	}
 
 	now := time.Now()
+	if n, err := s.st.MarkMissedScheduled(now); err != nil {
+		slog.Warn("cannot sweep missed passes", "err", err)
+	} else if n > 0 {
+		slog.Info("marked missed passes", "count", n)
+	}
 	cands, err := BuildPlan(s.cfg, set, now)
 	if err != nil {
 		return err
