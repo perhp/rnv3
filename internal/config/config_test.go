@@ -25,6 +25,17 @@ func TestExampleConfigLoads(t *testing.T) {
 	if len(cfg.EnabledSatellites()) == 0 {
 		t.Error("example config should have at least one enabled satellite")
 	}
+	// YAML lists replace defaults wholesale, so every satellite block in the
+	// example must be complete — a missing min_elevation would silently
+	// schedule 0° passes.
+	for _, s := range cfg.Satellites {
+		if s.MinElevation <= 0 {
+			t.Errorf("%s: example config must set min_elevation explicitly", s.Name)
+		}
+		if s.SunMinElevation == 0 {
+			t.Errorf("%s: example config must set sun_min_elevation explicitly", s.Name)
+		}
+	}
 }
 
 func TestValidateCatchesBadValues(t *testing.T) {

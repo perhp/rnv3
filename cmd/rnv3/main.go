@@ -19,7 +19,9 @@ import (
 	"golang.org/x/term"
 
 	"github.com/perhp/rnv3/internal/config"
+	"github.com/perhp/rnv3/internal/sched"
 	"github.com/perhp/rnv3/internal/store"
+	"github.com/perhp/rnv3/internal/tle"
 	"github.com/perhp/rnv3/internal/web"
 )
 
@@ -76,7 +78,17 @@ func run(configPath string, checkOnly bool) error {
 	schemaVer, _ := st.SchemaVersion()
 	slog.Info("database ready", "path", dbPath, "schema_version", schemaVer)
 
-	srv, err := web.New(cfg, st, version)
+	tleMgr := tle.NewManager(cfg.Paths.DataDir)
+	scheduler := sched.New(cfg, st, tleMgr, &sched.NotImplementedRunner{St: st, DryRun: cfg.Scheduling.DryRun})
+	schedCtx, cancelSched := context.WithCancel(context.Background())
+	defer cancelSched()
+	go func() {
+		if err := scheduler.Run(schedCtx); err != nil && !errors.Is(err, context.Canceled) {
+			slog.Error("scheduler stopped", "err", err)
+		}
+	}()
+
+	srv, err := web.New(cfg, st, tleMgr, version)
 	if err != nil {
 		return err
 	}
@@ -124,13 +136,12 @@ func run(configPath string, checkOnly bool) error {
 			}
 			return httpServer.Shutdown(ctx)
 		case <-reload:
-			// M0: validate and log only. Later milestones swap the live config
-			// into the scheduler/notifier and regenerate satdump_cfg.json.
 			if fresh, err := config.Load(configPath); err != nil {
 				slog.Error("SIGHUP reload failed, keeping current config", "err", err)
 			} else {
 				*cfg = *fresh
-				slog.Info("config reloaded")
+				slog.Info("config reloaded, replanning passes")
+				scheduler.Replan()
 			}
 		case err := <-errCh:
 			return err

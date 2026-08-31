@@ -203,12 +203,15 @@ binary, unit file, udev rules, directories, SatDump.
 
 ### Milestones
 
-- [ ] **M0 — Skeleton**: repo, config loader with current `settings.yml` values mapped over,
+- [x] **M0 — Skeleton**: repo, config loader with current `settings.yml` values mapped over,
   SQLite store + migrations, systemd unit, cross-compile + deploy script to the Pi.
   *Exit: daemon runs on raspinoaa, serves a hello/status page.*
+  (Code complete + local smoke test 2026-08-31; on-Pi run deferred by choice.)
 - [ ] **M1 — Predict & schedule**: TLE fetch/validate, SGP4 passes, sun gates, overlap resolver,
   plan visible in DB. *Exit: predicted passes match the current system's schedule within seconds —
   run both side by side (rnv3 in dry-run mode, no SDR contention).*
+  (Code complete 2026-08-31: live Celestrak fetch + 7-day plan verified locally; the
+  side-by-side comparison against RN2 happens when we first deploy to the Pi.)
 - [ ] **M2 — Capture & decode**: SatDump runner with per-SDR profiles, work dirs, state machine,
   SNR/frame stats, ramfs logic. *Exit: a real NOAA and a real Meteor pass decoded end-to-end by
   rnv3 (old system paused during the test).*

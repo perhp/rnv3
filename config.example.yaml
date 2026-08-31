@@ -17,6 +17,8 @@ sdr:
 
 # The five stock birds. Frequencies and NORAD ids are config now, not code —
 # add or retire satellites here.
+# NOTE: this list REPLACES the built-in defaults wholesale (YAML lists do not
+# merge per-item), so every satellite block must be complete.
 satellites:
   - name: NOAA 15
     type: noaa-apt
@@ -34,18 +36,30 @@ satellites:
     frequency_mhz: 137.9125
     enabled: false
     gain: 29.7
+    freq_offset_ppm: 0
+    bias_tee: false
+    sun_min_elevation: 6
+    min_elevation: 30
   - name: NOAA 19
     type: noaa-apt
     norad_id: 33591
     frequency_mhz: 137.1000
     enabled: false
     gain: 29.7
+    freq_offset_ppm: 0
+    bias_tee: false
+    sun_min_elevation: 6
+    min_elevation: 30
   - name: METEOR-M2 3
     type: meteor-lrpt
     norad_id: 57166
     frequency_mhz: 137.9000
     enabled: true
     gain: 40.2
+    freq_offset_ppm: 0
+    bias_tee: false
+    sun_min_elevation: 6
+    min_elevation: 30
     schedule_sun_min_elevation: -6 # skip passes darker than civil twilight
     interleaving_80k: false
   - name: METEOR-M2 4
@@ -54,6 +68,10 @@ satellites:
     frequency_mhz: 137.9000
     enabled: true
     gain: 40.2
+    freq_offset_ppm: 0
+    bias_tee: false
+    sun_min_elevation: 6
+    min_elevation: 30
     schedule_sun_min_elevation: -6
     interleaving_80k: false
 

@@ -26,6 +26,7 @@ th { color: var(--dim); font-weight: normal; font-size: .75rem; text-transform: 
 .on { color: var(--green); } .off { color: var(--dim); }
 .lamp { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--green); margin-right: .5rem; }
 .err { color: #a13232; }
+.warn { color: var(--amber); }
 </style>
 </head>
 <body>
@@ -39,7 +40,29 @@ th { color: var(--dim); font-weight: normal; font-size: .75rem; text-transform: 
       <dt>DB schema</dt><dd>v{{.SchemaVer}}{{if .Err}} <span class="err">{{.Err}}</span>{{end}}</dd>
       <dt>Passes</dt><dd>{{.PassCount}}</dd>
       <dt>Images</dt><dd>{{.ImageCount}}</dd>
+      <dt>TLE age</dt><dd{{if .TLEStale}} class="warn"{{end}}>{{.TLEAge}}</dd>
     </dl>
+  </div>
+
+  <div class="panel">
+    <h2>Upcoming passes</h2>
+    {{if .Upcoming}}
+    <table>
+      <tr><th>Satellite</th><th>AOS</th><th>LOS</th><th>Max elev</th><th>Dir</th><th>State</th></tr>
+      {{range .Upcoming}}
+      <tr>
+        <td>{{.Satellite}}</td>
+        <td>{{.Start}}</td>
+        <td>{{.End}}</td>
+        <td>{{.MaxElevation}}°</td>
+        <td>{{.Direction}}</td>
+        <td>{{if eq .State "scheduled"}}<span class="on">{{.State}}</span>{{else}}<span class="off" title="{{.ErrorText}}">{{.State}}</span>{{end}}</td>
+      </tr>
+      {{end}}
+    </table>
+    {{else}}
+    <p class="off">No passes planned yet.</p>
+    {{end}}
   </div>
 
   <div class="panel">
