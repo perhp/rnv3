@@ -1,0 +1,174 @@
+# rnv3 configuration.
+# Copy to /etc/rnv3/config.yaml and edit. Every key shown here has the same
+# default when omitted; unknown keys are rejected at startup.
+# Reload without restart: sudo systemctl reload rnv3
+
+station:
+  name: raspberry-noaa.localdomain # hostname the panel is served under
+  location: ""                     # free text shown in notifications, e.g. "Aarhus, DK"
+  latitude: 40.712776              # south is negative
+  longitude: -74.005974            # west is negative
+  altitude: 0.0                    # metres above sea level
+
+sdr:
+  # rtlsdr | airspy_mini | airspy_r2 | airspy_hf_plus_discovery | hackrf | sdrplay | mirisdr
+  type: rtlsdr
+  use_device_string: false         # true = pass sdr_device_id to satdump (multi-dongle setups)
+
+# The five stock birds. Frequencies and NORAD ids are config now, not code —
+# add or retire satellites here.
+satellites:
+  - name: NOAA 15
+    type: noaa-apt
+    norad_id: 25338
+    frequency_mhz: 137.6200
+    enabled: false
+    gain: 29.7                     # 0 = auto
+    freq_offset_ppm: 0             # RTL-SDR only
+    bias_tee: false
+    sun_min_elevation: 6           # day/night classification threshold
+    min_elevation: 30              # minimum max-elevation to schedule the pass
+  - name: NOAA 18
+    type: noaa-apt
+    norad_id: 28654
+    frequency_mhz: 137.9125
+    enabled: false
+    gain: 29.7
+  - name: NOAA 19
+    type: noaa-apt
+    norad_id: 33591
+    frequency_mhz: 137.1000
+    enabled: false
+    gain: 29.7
+  - name: METEOR-M2 3
+    type: meteor-lrpt
+    norad_id: 57166
+    frequency_mhz: 137.9000
+    enabled: true
+    gain: 40.2
+    schedule_sun_min_elevation: -6 # skip passes darker than civil twilight
+    interleaving_80k: false
+  - name: METEOR-M2 4
+    type: meteor-lrpt
+    norad_id: 59051
+    frequency_mhz: 137.9000
+    enabled: true
+    gain: 40.2
+    schedule_sun_min_elevation: -6
+    interleaving_80k: false
+
+scheduling:
+  days_ahead: 7
+  resolve_overlaps: true
+  prefer_meteor_over_noaa: true
+  tle_refresh_hour_utc: 0
+  dry_run: false                   # true = plan passes but never touch the SDR (parallel-run mode)
+
+capture:
+  noaa_memory_threshold_mb: 50     # buffer in ramfs only above this much free RAM
+  meteor_memory_threshold_mb: 50
+
+processing:
+  polar_az_el: true
+  polar_direction: true
+  noaa:
+    jpg_quality: 90
+    crop_telemetry_wedges: false
+    map_country_borders: true
+    # SatDump composite tokens; drives the generated satdump_cfg.json
+    day_enhancements: [MSA, MSA-precip, MCIR, MCIR-precip, HVC-precip, HVCT-precip, HVC, HVCT, ZA, therm, sea, CC, HE, HF, MD, BD, MB, JF, JJ, LC, TA, WV, NO, histeq, enhanced-IR]
+    night_enhancements: [MCIR, MCIR-precip, HVCT, ZA, therm, NO, TA, sea, histeq, enhanced-IR]
+  meteor:
+    jpg_quality: 90
+    flip_northbound: true
+    draw_map_overlay: false
+    equidistant_projection: true
+    day_enhancements: ["221", "321", "124", MSA, MCIR, MCIR-precip, HVC, HVCT, ZA, therm, sea, CC, HE, HF, MD, BD, MB, JF, JJ, LC, TA, WV, NO, enhanced-IR, 39um]
+    night_enhancements: ["654", "456", MCIR, MCIR-precip, HVC, HVCT, ZA, therm, sea, CC, HE, HF, MD, BD, MB, JF, JJ, LC, TA, WV, NO, enhanced-IR, 39um]
+
+retention:
+  delete_noaa_audio: false
+  delete_meteor_audio: false
+  delete_audio_older_than_days: 3
+  prune_images_older_than_days: 0  # 0 = keep forever
+
+daily:
+  best_of_day_push: false
+  timelapse:
+    enabled: false
+    suffixes: ["-321_projected.jpg", "-221_projected.jpg"]
+  mosaic:
+    enabled: false
+    suffixes: ["-321_projected.jpg", "-221_projected.jpg", "-321_equirect_projected.jpg", "-221_equirect_projected.jpg"]
+    min_snr: 0                     # 0 = no filter
+    daylight_only: false
+
+notifications:
+  quality_gate:                    # mutes discord/telegram/pushover/email, never the webhook
+    enabled: false
+    min_elevation: 0
+    min_snr: 0
+  webhook:                         # Home Assistant / n8n / Node-RED / anything
+    enabled: false
+    url: ""
+    auth_token: ""                 # sent as Bearer token when set
+  discord:
+    enabled: false
+    noaa_webhook_url: ""
+    meteor_webhook_url: ""
+  telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: ""
+  pushover:
+    enabled: false
+    api_token: ""
+    user: ""
+    priority: 0
+    link_url: ""                   # panel base URL used in the notification link
+  email:
+    enabled: false
+    to: ""
+    from: ""
+    smtp_host: ""
+    smtp_port: 587
+    smtp_user: ""
+    smtp_password: ""
+
+watchdog:
+  enabled: true
+  max_hours_without_capture: 48
+  disk_usage_threshold_pct: 90
+
+community:
+  contribute_composites: false
+  url: https://voxgalactica.com/upload
+
+web:
+  listen: ":80"
+  tls:
+    enabled: false
+    listen: ":443"
+    cert_file: ""
+    key_file: ""
+  admin:
+    enabled: true
+    username: admin
+    password_hash: ""              # generate with: rnv3 -hash-password
+  instruments:
+    satvis: true
+    solar_terminator: true
+    coronal: false                 # high data usage
+
+paths:
+  data_dir: /var/lib/rnv3         # database, TLE cache, state
+  images: /srv/images
+  thumbs: /srv/images/thumb
+  audio_noaa: /srv/audio/noaa
+  audio_meteor: /srv/audio/meteor
+  work: /srv/work                 # per-pass satdump work dirs
+  ramfs: /var/ramfs
+  satdump_binary: /usr/bin/satdump
+  satdump_config: /usr/share/satdump/satdump_cfg.json
+
+log_level: info                   # debug | info | warn | error

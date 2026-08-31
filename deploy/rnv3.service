@@ -1,0 +1,20 @@
+# systemd unit for rnv3. Installed by deploy/install.sh, which substitutes
+# __USER__ with the station user (never root).
+[Unit]
+Description=rnv3 NOAA/Meteor ground station daemon
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__USER__
+ExecStart=/usr/local/bin/rnv3 -config /etc/rnv3/config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+# Binding :80/:443 as a non-root user:
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

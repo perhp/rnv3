@@ -1,0 +1,7 @@
+/rnv3
+/rnv3.exe
+/dist/
+/config.yaml
+*.db
+*.db-wal
+*.db-shm
