@@ -75,6 +75,22 @@ func ValidateLines(line1, line2 string, wantID int) error {
 	if _, err := strconv.ParseUint(strings.TrimSpace(line2[26:33]), 10, 64); err != nil {
 		return fmt.Errorf("eccentricity field %q is not numeric", line2[26:33])
 	}
+	// The drag/derivative fields go through the SGP4 library's own string
+	// assembly before parsing; replicate it exactly so a checksum-valid but
+	// malformed TLE cannot reach the library's log.Fatal.
+	assembled := []struct {
+		value string
+		name  string
+	}{
+		{strings.Replace(line1[33:43], " ", "", 2), "first derivative (ndot)"},
+		{strings.Replace(line1[44:45]+"."+line1[45:50]+"e"+line1[50:52], " ", "", 2), "second derivative (nddot)"},
+		{strings.Replace(line1[53:54]+"."+line1[54:59]+"e"+line1[59:61], " ", "", 2), "drag term (bstar)"},
+	}
+	for _, f := range assembled {
+		if _, err := strconv.ParseFloat(f.value, 64); err != nil {
+			return fmt.Errorf("%s field assembles to %q, not numeric", f.name, f.value)
+		}
+	}
 	return nil
 }
 

@@ -79,21 +79,30 @@ func run(configPath string, checkOnly bool) error {
 	schemaVer, _ := st.SchemaVersion()
 	slog.Info("database ready", "path", dbPath, "schema_version", schemaVer)
 
+	prov := config.NewProvider(cfg)
+	errCh := make(chan error, 3)
+
 	tleMgr := tle.NewManager(cfg.Paths.DataDir)
-	var runner sched.CaptureRunner = &capture.Runner{Cfg: cfg, St: st, Processor: capture.InventoryProcessor{}}
+	// Note: dry_run selects the runner at startup; toggling it requires a restart.
+	var runner sched.CaptureRunner = &capture.Runner{Prov: prov, St: st, Processor: capture.InventoryProcessor{}}
 	if cfg.Scheduling.DryRun {
 		runner = &sched.NotImplementedRunner{St: st, DryRun: true}
 	}
-	scheduler := sched.New(cfg, st, tleMgr, runner)
+	scheduler := sched.New(prov, st, tleMgr, runner)
 	schedCtx, cancelSched := context.WithCancel(context.Background())
 	defer cancelSched()
+	schedDone := make(chan struct{})
 	go func() {
+		defer close(schedDone)
+		// A dead scheduler must kill the process (systemd restarts it) —
+		// an HTTP server that still answers "ok" while captures silently
+		// stopped is worse than a restart.
 		if err := scheduler.Run(schedCtx); err != nil && !errors.Is(err, context.Canceled) {
-			slog.Error("scheduler stopped", "err", err)
+			errCh <- fmt.Errorf("scheduler stopped: %w", err)
 		}
 	}()
 
-	srv, err := web.New(cfg, st, tleMgr, version)
+	srv, err := web.New(prov, st, tleMgr, version)
 	if err != nil {
 		return err
 	}
@@ -102,8 +111,6 @@ func run(configPath string, checkOnly bool) error {
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-
-	errCh := make(chan error, 2)
 	go func() {
 		slog.Info("http server listening", "addr", cfg.Web.Listen)
 		if err := httpServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
@@ -134,6 +141,15 @@ func run(configPath string, checkOnly bool) error {
 		select {
 		case sig := <-stop:
 			slog.Info("shutting down", "signal", sig.String())
+			// Stop the scheduler first and wait for an in-flight capture to
+			// reach a terminal DB state (SatDump kill + drain can take up to
+			// killGrace); fits inside systemd's default TimeoutStopSec=90.
+			cancelSched()
+			select {
+			case <-schedDone:
+			case <-time.After(85 * time.Second):
+				slog.Error("scheduler did not stop in time; passes may be left mid-state")
+			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			if tlsServer != nil {
@@ -141,13 +157,22 @@ func run(configPath string, checkOnly bool) error {
 			}
 			return httpServer.Shutdown(ctx)
 		case <-reload:
-			if fresh, err := config.Load(configPath); err != nil {
+			fresh, err := config.Load(configPath)
+			if err != nil {
 				slog.Error("SIGHUP reload failed, keeping current config", "err", err)
-			} else {
-				*cfg = *fresh
-				slog.Info("config reloaded, replanning passes")
-				scheduler.Replan()
+				continue
 			}
+			cur := prov.Get()
+			if changed := config.RestartOnlyFieldsChanged(cur, fresh); len(changed) > 0 {
+				slog.Warn("restart-only settings changed in config file; keeping current values until restart",
+					"settings", changed)
+				fresh.Web.Listen = cur.Web.Listen
+				fresh.Web.TLS = cur.Web.TLS
+				fresh.Paths.DataDir = cur.Paths.DataDir
+			}
+			prov.Set(fresh)
+			slog.Info("config reloaded, replanning passes")
+			scheduler.Replan()
 		case err := <-errCh:
 			return err
 		}

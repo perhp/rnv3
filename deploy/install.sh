@@ -25,8 +25,14 @@ sudo install -m 0755 "$BINARY" /usr/local/bin/rnv3
 echo "==> Config"
 sudo mkdir -p /etc/rnv3
 if [ ! -f /etc/rnv3/config.yaml ]; then
-  sudo install -m 0644 "$(dirname "$0")/../config.example.yaml" /etc/rnv3/config.yaml
+  # 0600, owned by the service user: the config holds notification
+  # credentials (webhook/Telegram tokens, SMTP password).
+  sudo install -m 0600 -o "$USER" -g "$USER" "$(dirname "$0")/../config.example.yaml" /etc/rnv3/config.yaml
   echo "    Wrote /etc/rnv3/config.yaml from example — edit it, then re-run or restart."
+else
+  # Correct permissions on configs installed by earlier versions.
+  sudo chown "$USER:$USER" /etc/rnv3/config.yaml
+  sudo chmod 0600 /etc/rnv3/config.yaml
 fi
 
 echo "==> Directories"

@@ -14,6 +14,11 @@ sdr:
   # rtlsdr | airspy_mini | airspy_r2 | airspy_hf_plus_discovery | hackrf | sdrplay | mirisdr
   type: rtlsdr
   use_device_string: false         # true = pass sdr_device_id to satdump (multi-dongle setups)
+  # Each satellite's `gain` maps to the device's SatDump parameter:
+  #   rtlsdr/mirisdr --gain, airspy_mini/r2 --general_gain,
+  #   hackrf/sdrplay --lna_gain, airspy_hf_plus_discovery none (AGC).
+  # Multi-knob devices take the rest via a satellite's extra_satdump_args,
+  # e.g. [--vga_gain, "20", --amp] (HackRF) or [--attenuation, "12"] (HF+).
 
 # The five stock birds. Frequencies and NORAD ids are config now, not code —
 # add or retire satellites here.

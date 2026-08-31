@@ -53,8 +53,10 @@ const watchdogSlack = 15 * time.Minute
 const killGrace = 60 * time.Second
 
 // Runner executes passes with SatDump. Implements sched.CaptureRunner.
+// The config is snapshotted once at the start of each pass, so a SIGHUP
+// reload can never mix old and new settings within one capture.
 type Runner struct {
-	Cfg       *config.Config
+	Prov      *config.Provider
 	St        *store.Store
 	Processor PostProcessor
 	// Exec substitutes the process constructor in tests; nil means the real
@@ -66,6 +68,7 @@ type Runner struct {
 // pass row rather than returned — the scheduler has nothing useful to do with
 // them beyond logging, and the state machine is the source of truth.
 func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
+	cfg := r.Prov.Get() // one immutable snapshot for the whole capture
 	log := slog.With("pass_id", p.ID, "satellite", p.Satellite)
 
 	duration := time.Until(time.Unix(p.EndTS, 0))
@@ -81,33 +84,33 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 	}
 
 	fileBase := FileBase(sat.Name, time.Unix(p.StartTS, 0))
-	workDir, inRAM, err := r.makeWorkDir(p.ID, sat)
+	workDir, inRAM, err := makeWorkDir(cfg, p.ID, sat)
 	if err != nil {
 		r.fail(p.ID, fmt.Sprintf("cannot create work dir: %v", err))
 		return
 	}
 	log.Info("capture starting", "duration_s", captureSeconds, "work_dir", workDir, "ramfs", inRAM, "file_base", fileBase)
 
-	args, err := BuildArgs(r.Cfg, sat, workDir, captureSeconds, p.StartTS)
+	args, err := BuildArgs(cfg, sat, workDir, captureSeconds, p.StartTS)
 	if err != nil {
 		r.fail(p.ID, err.Error())
 		return
 	}
 
 	snr := &SNRStats{}
-	runErr := r.runSatdump(ctx, workDir, args, snr, log)
+	runErr := r.runSatdump(ctx, cfg, workDir, args, snr, log)
 
 	if err := r.St.SetPassState(p.ID, store.StateProcessing, ""); err != nil {
 		log.Error("cannot mark pass processing", "err", err)
 	}
 
 	// Day/night classification at AOS+90s, RN2 parity.
-	sunEl := predict.SunElevation(r.Cfg.Station.Latitude, r.Cfg.Station.Longitude,
+	sunEl := predict.SunElevation(cfg.Station.Latitude, cfg.Station.Longitude,
 		time.Unix(p.StartTS+90, 0))
 	daylight := sunEl > sat.SunMinElevation
 
 	// Recording + frame stats + audio retention per satellite type.
-	recording := r.handleRecording(p, sat, workDir, fileBase, log)
+	recording := r.handleRecording(cfg, p, sat, workDir, fileBase, log)
 
 	images := 0
 	if procN, err := r.Processor.Process(ctx, p, sat, workDir, fileBase); err != nil {
@@ -139,7 +142,7 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 
 // runSatdump executes satdump with a hard deadline, streaming its combined
 // output through the SNR parser into a per-pass log file.
-func (r *Runner) runSatdump(ctx context.Context, workDir string, args []string, snr *SNRStats, log *slog.Logger) error {
+func (r *Runner) runSatdump(ctx context.Context, cfg *config.Config, workDir string, args []string, snr *SNRStats, log *slog.Logger) error {
 	deadline := time.Duration(0)
 	for i, a := range args { // recover the timeout for the watchdog deadline
 		if a == "--timeout" && i+1 < len(args) {
@@ -155,7 +158,7 @@ func (r *Runner) runSatdump(ctx context.Context, workDir string, args []string, 
 	if newCmd == nil {
 		newCmd = exec.CommandContext
 	}
-	cmd := newCmd(runCtx, r.Cfg.Paths.SatdumpBinary, args...)
+	cmd := newCmd(runCtx, cfg.Paths.SatdumpBinary, args...)
 	cmd.Dir = workDir
 	cmd.WaitDelay = killGrace
 
@@ -197,19 +200,19 @@ func (r *Runner) runSatdump(ctx context.Context, workDir string, args []string, 
 
 // handleRecording verifies the raw recording exists, computes Meteor frame
 // stats, and applies audio retention. Returns whether a recording was found.
-func (r *Runner) handleRecording(p store.Pass, sat config.Satellite, workDir, fileBase string, log *slog.Logger) bool {
+func (r *Runner) handleRecording(cfg *config.Config, p store.Pass, sat config.Satellite, workDir, fileBase string, log *slog.Logger) bool {
 	switch sat.Type {
 	case config.SatNOAAAPT:
 		wav := filepath.Join(workDir, "noaa_apt.wav")
 		if !fileNonEmpty(wav) {
 			return false
 		}
-		if r.Cfg.Retention.DeleteNOAAAudio {
+		if cfg.Retention.DeleteNOAAAudio {
 			os.Remove(wav)
-		} else if err := moveFile(wav, filepath.Join(r.Cfg.Paths.AudioNOAA, fileBase+".wav")); err != nil {
+		} else if err := moveFile(wav, filepath.Join(cfg.Paths.AudioNOAA, fileBase+".wav")); err != nil {
 			log.Error("cannot retain wav", "err", err)
 		}
-		pruneOldFiles(r.Cfg.Paths.AudioNOAA, r.Cfg.Retention.AudioOlderThanDays, log)
+		pruneOldFiles(cfg.Paths.AudioNOAA, cfg.Retention.AudioOlderThanDays, log)
 		return true
 
 	case config.SatMeteorLRPT:
@@ -227,12 +230,12 @@ func (r *Runner) handleRecording(p store.Pass, sat config.Satellite, workDir, fi
 			log.Info("frame stats", "received", st.Received, "expected", st.Expected,
 				"loss_pct", fmt.Sprintf("%.1f", st.LossPct), "largest_gap", st.LargestGap)
 		}
-		if r.Cfg.Retention.DeleteMeteorAudio {
+		if cfg.Retention.DeleteMeteorAudio {
 			os.Remove(caduPath)
-		} else if err := moveFile(caduPath, filepath.Join(r.Cfg.Paths.AudioMeteor, fileBase+".cadu")); err != nil {
+		} else if err := moveFile(caduPath, filepath.Join(cfg.Paths.AudioMeteor, fileBase+".cadu")); err != nil {
 			log.Error("cannot retain cadu", "err", err)
 		}
-		pruneOldFiles(r.Cfg.Paths.AudioMeteor, r.Cfg.Retention.AudioOlderThanDays, log)
+		pruneOldFiles(cfg.Paths.AudioMeteor, cfg.Retention.AudioOlderThanDays, log)
 		return true
 	}
 	return false
@@ -240,16 +243,16 @@ func (r *Runner) handleRecording(p store.Pass, sat config.Satellite, workDir, fi
 
 // makeWorkDir picks ramfs when enough memory is free (per-type threshold,
 // RN2 parity), disk otherwise, and creates the per-pass directory.
-func (r *Runner) makeWorkDir(passID int64, sat config.Satellite) (string, bool, error) {
-	threshold := r.Cfg.Capture.NOAAMemoryThresholdMB
+func makeWorkDir(cfg *config.Config, passID int64, sat config.Satellite) (string, bool, error) {
+	threshold := cfg.Capture.NOAAMemoryThresholdMB
 	if sat.Type == config.SatMeteorLRPT {
-		threshold = r.Cfg.Capture.MeteorMemoryThresholdMB
+		threshold = cfg.Capture.MeteorMemoryThresholdMB
 	}
-	base := r.Cfg.Paths.Work
+	base := cfg.Paths.Work
 	inRAM := false
 	if free := availableMemoryMB(); free >= threshold && threshold > 0 {
-		if st, err := os.Stat(r.Cfg.Paths.Ramfs); err == nil && st.IsDir() {
-			base = filepath.Join(r.Cfg.Paths.Ramfs, "work")
+		if st, err := os.Stat(cfg.Paths.Ramfs); err == nil && st.IsDir() {
+			base = filepath.Join(cfg.Paths.Ramfs, "work")
 			inRAM = true
 		}
 	}

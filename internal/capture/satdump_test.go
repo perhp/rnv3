@@ -135,6 +135,43 @@ func TestBuildArgsAutoGainPassedVerbatim(t *testing.T) {
 	}
 }
 
+// Per-device gain parameters follow SatDump's SDR options docs — RN2 sent
+// Airspy's --general_gain to every non-RTL device, where it did nothing.
+func TestBuildArgsGainFlagMatrix(t *testing.T) {
+	cases := map[string]string{
+		"rtlsdr":      "--gain",
+		"airspy_mini": "--general_gain",
+		"airspy_r2":   "--general_gain",
+		"hackrf":      "--lna_gain",
+		"sdrplay":     "--lna_gain",
+		"mirisdr":     "--gain",
+	}
+	for recv, flag := range cases {
+		got := argString(t, baseCfg(recv), meteorM23())
+		if !strings.Contains(got, " "+flag+" 40.2 ") {
+			t.Errorf("%s: gain flag %s missing:%s", recv, flag, got)
+		}
+	}
+}
+
+func TestBuildArgsHFPlusHasNoScalarGain(t *testing.T) {
+	got := argString(t, baseCfg("airspy_hf_plus_discovery"), meteorM23())
+	for _, banned := range []string{"--gain", "--general_gain", "--lna_gain", "--attenuation"} {
+		if strings.Contains(got, " "+banned+" ") {
+			t.Errorf("HF+ must not receive %s (attenuation semantics are inverted; use extra_satdump_args):%s", banned, got)
+		}
+	}
+}
+
+func TestBuildArgsExtraSatdumpArgs(t *testing.T) {
+	sat := meteorM23()
+	sat.ExtraSatdumpArgs = []string{"--vga_gain", "20", "--amp"}
+	got := argString(t, baseCfg("hackrf"), sat)
+	if !strings.Contains(got, " --vga_gain 20 --amp ") {
+		t.Errorf("extra args not appended:%s", got)
+	}
+}
+
 func TestBuildArgsUnknownReceiver(t *testing.T) {
 	cfg := config.Default()
 	cfg.SDR.Type = "banana"

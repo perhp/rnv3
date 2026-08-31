@@ -39,12 +39,20 @@ func TestValidateLinesAcceptsGoodTLE(t *testing.T) {
 
 func TestValidateLinesRejectsCorruption(t *testing.T) {
 	tl := testTLE(t)
+	// Corrupt the SGP4-assembled fields at their exact columns (0-based):
+	// ndot [33:43], nddot [44:52], bstar [53:61].
+	badNdot := fixChecksum(t, testLine1Body[:33]+" .00X00100"+testLine1Body[43:])
+	badNddot := fixChecksum(t, testLine1Body[:44]+" 00Q00-0"+testLine1Body[52:])
+	badBstar := fixChecksum(t, testLine1Body[:53]+" 6Z000-4"+testLine1Body[61:])
 	cases := map[string][2]string{
 		"bad checksum":     {tl.Line1[:68] + "9", tl.Line2},
 		"short line":       {tl.Line1[:60], tl.Line2},
 		"wrong prefix":     {"3" + tl.Line1[1:], tl.Line2},
 		"id mismatch":      {strings.Replace(tl.Line1, "33591", "25338", 1), tl.Line2},
 		"garbage numerics": {tl.Line1, fixChecksum(t, testLine2Body[:8] + "XX9.1900" + testLine2Body[16:])},
+		"garbage ndot":     {badNdot, tl.Line2},
+		"garbage nddot":    {badNddot, tl.Line2},
+		"garbage bstar":    {badBstar, tl.Line2},
 	}
 	for name, lines := range cases {
 		if err := ValidateLines(lines[0], lines[1], 33591); err == nil {

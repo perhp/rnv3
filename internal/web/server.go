@@ -19,7 +19,7 @@ import (
 var uiFS embed.FS
 
 type Server struct {
-	cfg     *config.Config
+	prov    *config.Provider
 	store   *store.Store
 	tles    *tle.Manager
 	version string
@@ -27,12 +27,12 @@ type Server struct {
 	tmpl    *template.Template
 }
 
-func New(cfg *config.Config, st *store.Store, tles *tle.Manager, version string) (*Server, error) {
+func New(prov *config.Provider, st *store.Store, tles *tle.Manager, version string) (*Server, error) {
 	tmpl, err := template.ParseFS(uiFS, "ui/*.html")
 	if err != nil {
 		return nil, err
 	}
-	return &Server{cfg: cfg, store: st, tles: tles, version: version, started: time.Now(), tmpl: tmpl}, nil
+	return &Server{prov: prov, store: st, tles: tles, version: version, started: time.Now(), tmpl: tmpl}, nil
 }
 
 func (s *Server) Handler() http.Handler {
@@ -69,12 +69,13 @@ type statusData struct {
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	cfg := s.prov.Get() // per-request snapshot
 	data := statusData{
 		Version:    s.version,
 		Uptime:     time.Since(s.started).Round(time.Second).String(),
-		Station:    s.cfg.Station,
-		SDRType:    s.cfg.SDR.Type,
-		Satellites: s.cfg.Satellites,
+		Station:    cfg.Station,
+		SDRType:    cfg.SDR.Type,
+		Satellites: cfg.Satellites,
 	}
 	if v, err := s.store.SchemaVersion(); err == nil {
 		data.SchemaVer = v

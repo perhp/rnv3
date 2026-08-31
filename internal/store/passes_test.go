@@ -129,6 +129,63 @@ func TestReplaceFuturePlanKeepsTerminalStates(t *testing.T) {
 	}
 }
 
+func TestNextScheduledIncludesInProgressPass(t *testing.T) {
+	s := testStore(t)
+	// Pass started 5 minutes ago, ends in 10: the remaining window is still
+	// capturable (daemon restarted mid-pass, or previous capture overran).
+	inProgress := plannedPass("NOAA 19", -5, 45, StateScheduled)
+	if err := s.ReplaceFuturePlan(now.Add(-10*time.Minute), []Pass{inProgress}); err != nil {
+		t.Fatal(err)
+	}
+	next, err := s.NextScheduled(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next == nil || next.Satellite != "NOAA 19" {
+		t.Fatalf("in-progress pass not selected: %+v", next)
+	}
+	// But a pass whose window fully closed must not be selected.
+	if _, err := s.DB.Exec(`UPDATE passes SET end_ts = ?`, now.Add(-time.Minute).Unix()); err != nil {
+		t.Fatal(err)
+	}
+	next, _ = s.NextScheduled(now)
+	if next != nil {
+		t.Fatalf("closed-window pass selected: %+v", next)
+	}
+}
+
+func TestFailStaleRunning(t *testing.T) {
+	s := testStore(t)
+	old := plannedPass("NOAA 19", -120, 45, StateScheduled) // ended ~105 min ago
+	recent := plannedPass("METEOR-M2 3", -20, 50, StateScheduled)
+	if err := s.ReplaceFuturePlan(now.Add(-3*time.Hour), []Pass{old, recent}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec(`UPDATE passes SET state = ?`, StateCapturing); err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.FailStaleRunning(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("swept %d passes, want 1 (only the long-ended one)", n)
+	}
+	rows, _ := s.UpcomingPasses(now.Add(-3*time.Hour), 10)
+	for _, p := range rows {
+		switch p.Satellite {
+		case "NOAA 19":
+			if p.State != StateFailed {
+				t.Errorf("stale capturing pass state = %s, want failed", p.State)
+			}
+		case "METEOR-M2 3":
+			if p.State != StateCapturing {
+				t.Errorf("recent capturing pass must be untouched, got %s", p.State)
+			}
+		}
+	}
+}
+
 func TestSetPassState(t *testing.T) {
 	s := testStore(t)
 	if err := s.ReplaceFuturePlan(now, []Pass{plannedPass("NOAA 19", 60, 45, StateScheduled)}); err != nil {

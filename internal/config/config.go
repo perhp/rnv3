@@ -19,23 +19,32 @@ const (
 	SatMeteorLRPT SatelliteType = "meteor-lrpt"
 )
 
-// ReceiverTypes maps rnv3 receiver names to their SatDump source and default
-// sample rate. Mirrors the case blocks in RN2's receive_noaa.sh/receive_meteor.sh.
+// ReceiverTypes maps rnv3 receiver names to their SatDump source, default
+// sample rate, and the source parameter carrying the satellite's scalar gain.
+// Gain parameter names follow SatDump's per-source options
+// (https://docs.satdump.org/md_docs_2pages_2SDR__Options.html) — RN2 passed
+// Airspy's --general_gain to every non-RTL device, where it was silently
+// ignored. Devices with multi-knob gain (HackRF vga/amp, SDRplay if_gain,
+// Airspy HF+ agc_mode/hf_lna) take the rest via the satellite's
+// extra_satdump_args.
 var ReceiverTypes = map[string]Receiver{
-	"rtlsdr":                   {Source: "rtlsdr", SampleRate: "1.024e6", GainFlag: "--gain", SupportsPPM: true},
-	"airspy_mini":              {Source: "airspy", SampleRate: "3e6", GainFlag: "--general_gain"},
-	"airspy_r2":                {Source: "airspy", SampleRate: "2.5e6", GainFlag: "--general_gain"},
-	"airspy_hf_plus_discovery": {Source: "airspy", SampleRate: "192e3", GainFlag: "--general_gain"},
-	"hackrf":                   {Source: "hackrf", SampleRate: "4e6", GainFlag: "--general_gain"},
-	"sdrplay":                  {Source: "sdrplay", SampleRate: "2e6", GainFlag: "--general_gain"},
-	"mirisdr":                  {Source: "mirisdr", SampleRate: "2e6", GainFlag: "--general_gain"},
+	"rtlsdr":      {Source: "rtlsdr", SampleRate: "1.024e6", GainFlag: "--gain", SupportsPPM: true},
+	"airspy_mini": {Source: "airspy", SampleRate: "3e6", GainFlag: "--general_gain"},
+	"airspy_r2":   {Source: "airspy", SampleRate: "2.5e6", GainFlag: "--general_gain"},
+	// HF+ has no gain, only attenuation (inverted semantics) — mapping the
+	// scalar onto it would mislead, so gain is AGC-driven by default and
+	// attenuation/agc_mode/hf_lna belong in extra_satdump_args.
+	"airspy_hf_plus_discovery": {Source: "airspy", SampleRate: "192e3", GainFlag: ""},
+	"hackrf":                   {Source: "hackrf", SampleRate: "4e6", GainFlag: "--lna_gain"},
+	"sdrplay":                  {Source: "sdrplay", SampleRate: "2e6", GainFlag: "--lna_gain"},
+	"mirisdr":                  {Source: "mirisdr", SampleRate: "2e6", GainFlag: "--gain"},
 }
 
 // Receiver describes how a receiver type translates into SatDump flags.
 type Receiver struct {
 	Source      string
 	SampleRate  string
-	GainFlag    string
+	GainFlag    string // "" = no scalar gain parameter for this device
 	SupportsPPM bool
 }
 
@@ -102,6 +111,10 @@ type Satellite struct {
 	Interleaving80k bool `yaml:"interleaving_80k,omitempty"`
 	// SatelliteNumber is SatDump's --satellite_number (NOAA APT only: 15/18/19).
 	SatelliteNumber int `yaml:"satellite_number,omitempty"`
+	// ExtraSatdumpArgs are appended verbatim to the satdump invocation —
+	// the escape hatch for device-specific tuning (e.g. HackRF --vga_gain/
+	// --amp, SDRplay --if_gain/--agc_mode, Airspy HF+ --attenuation).
+	ExtraSatdumpArgs []string `yaml:"extra_satdump_args,omitempty"`
 }
 
 type Scheduling struct {
@@ -382,6 +395,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Scheduling.DaysAhead < 1 || c.Scheduling.DaysAhead > 16 {
 		add("scheduling.days_ahead %d out of range [1, 16]", c.Scheduling.DaysAhead)
+	}
+	if h := c.Scheduling.TLERefreshHourUTC; h < 0 || h > 23 {
+		add("scheduling.tle_refresh_hour_utc %d out of range [0, 23]", h)
 	}
 	if len(c.Satellites) == 0 {
 		add("satellites: at least one satellite must be defined")

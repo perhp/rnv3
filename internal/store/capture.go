@@ -52,6 +52,24 @@ func (s *Store) MarkMissedScheduled(now time.Time) (int64, error) {
 	return res.RowsAffected()
 }
 
+// staleRunningSlack covers a decode still finishing after LOS before a
+// capturing/processing row counts as abandoned.
+const staleRunningSlack = 30 * time.Minute
+
+// FailStaleRunning moves passes stuck in capturing/processing (daemon killed
+// mid-capture) to failed, so no pass is a zombie forever — the in-process
+// equivalent of RN2's EXIT trap, covering even a SIGKILL.
+func (s *Store) FailStaleRunning(now time.Time) (int64, error) {
+	res, err := s.DB.Exec(`UPDATE passes SET
+			state = ?, error_text = 'interrupted (station stopped during capture)', updated_ts = strftime('%s','now')
+		WHERE state IN (?, ?) AND end_ts < ?`,
+		StateFailed, StateCapturing, StateProcessing, now.Add(-staleRunningSlack).Unix())
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 func nullableFloat(f *float64) any {
 	if f == nil {
 		return nil

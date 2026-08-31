@@ -80,7 +80,7 @@ func fakeExec(t *testing.T, mode string) func(ctx context.Context, name string, 
 	}
 }
 
-func testRunner(t *testing.T, mode string, sat config.Satellite) (*Runner, *store.Store, store.Pass) {
+func testRunner(t *testing.T, mode string, sat config.Satellite) (*Runner, *config.Config, *store.Store, store.Pass) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := config.Default()
@@ -112,8 +112,8 @@ func testRunner(t *testing.T, mode string, sat config.Satellite) (*Runner, *stor
 		t.Fatalf("no scheduled pass: %v", err)
 	}
 
-	r := &Runner{Cfg: cfg, St: st, Processor: InventoryProcessor{}, Exec: fakeExec(t, mode)}
-	return r, st, *p
+	r := &Runner{Prov: config.NewProvider(cfg), St: st, Processor: InventoryProcessor{}, Exec: fakeExec(t, mode)}
+	return r, cfg, st, *p
 }
 
 func passState(t *testing.T, st *store.Store, id int64) (state, errText string) {
@@ -129,8 +129,8 @@ func passState(t *testing.T, st *store.Store, id int64) (state, errText string) 
 }
 
 func TestRunnerNOAADecodes(t *testing.T) {
-	r, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2]) // NOAA 19
-	r.Run(context.Background(), p, r.Cfg.Satellites[2])
+	r, cfg, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2]) // NOAA 19
+	r.Run(context.Background(), p, cfg.Satellites[2])
 
 	state, _ := passState(t, st, p.ID)
 	if state != store.StateDecoded {
@@ -152,18 +152,18 @@ func TestRunnerNOAADecodes(t *testing.T) {
 	}
 
 	// wav retained under the file base; work dir cleaned up.
-	wav := filepath.Join(r.Cfg.Paths.AudioNOAA, fileBase+".wav")
+	wav := filepath.Join(cfg.Paths.AudioNOAA, fileBase+".wav")
 	if _, err := os.Stat(wav); err != nil {
 		t.Errorf("retained wav missing: %v", err)
 	}
-	if entries, _ := os.ReadDir(r.Cfg.Paths.Work); len(entries) != 0 {
+	if entries, _ := os.ReadDir(cfg.Paths.Work); len(entries) != 0 {
 		t.Errorf("work dir not cleaned after success: %v", entries)
 	}
 }
 
 func TestRunnerMeteorFrameStats(t *testing.T) {
-	r, st, p := testRunner(t, "meteor-ok", config.Default().Satellites[3]) // METEOR-M2 3
-	r.Run(context.Background(), p, r.Cfg.Satellites[3])
+	r, cfg, st, p := testRunner(t, "meteor-ok", config.Default().Satellites[3]) // METEOR-M2 3
+	r.Run(context.Background(), p, cfg.Satellites[3])
 
 	state, _ := passState(t, st, p.ID)
 	if state != store.StateDecoded {
@@ -178,15 +178,15 @@ func TestRunnerMeteorFrameStats(t *testing.T) {
 	if received != 4 || expected != 6 || gap != 2 {
 		t.Errorf("frame stats %d/%d gap %d, want 4/6 gap 2", received, expected, gap)
 	}
-	cadu := filepath.Join(r.Cfg.Paths.AudioMeteor, FileBase(p.Satellite, time.Unix(p.StartTS, 0))+".cadu")
+	cadu := filepath.Join(cfg.Paths.AudioMeteor, FileBase(p.Satellite, time.Unix(p.StartTS, 0))+".cadu")
 	if _, err := os.Stat(cadu); err != nil {
 		t.Errorf("retained cadu missing: %v", err)
 	}
 }
 
 func TestRunnerNoImagesFails(t *testing.T) {
-	r, st, p := testRunner(t, "no-images", config.Default().Satellites[2])
-	r.Run(context.Background(), p, r.Cfg.Satellites[2])
+	r, cfg, st, p := testRunner(t, "no-images", config.Default().Satellites[2])
+	r.Run(context.Background(), p, cfg.Satellites[2])
 	state, errText := passState(t, st, p.ID)
 	if state != store.StateFailed {
 		t.Fatalf("state = %s, want failed", state)
@@ -195,14 +195,14 @@ func TestRunnerNoImagesFails(t *testing.T) {
 		t.Errorf("error = %q", errText)
 	}
 	// Work dir kept for debugging on failure.
-	if entries, _ := os.ReadDir(r.Cfg.Paths.Work); len(entries) == 0 {
+	if entries, _ := os.ReadDir(cfg.Paths.Work); len(entries) == 0 {
 		t.Error("work dir should be kept after failure")
 	}
 }
 
 func TestRunnerNoRecordingFails(t *testing.T) {
-	r, st, p := testRunner(t, "no-recording", config.Default().Satellites[2])
-	r.Run(context.Background(), p, r.Cfg.Satellites[2])
+	r, cfg, st, p := testRunner(t, "no-recording", config.Default().Satellites[2])
+	r.Run(context.Background(), p, cfg.Satellites[2])
 	state, errText := passState(t, st, p.ID)
 	if state != store.StateFailed {
 		t.Fatalf("state = %s, want failed", state)
@@ -213,9 +213,9 @@ func TestRunnerNoRecordingFails(t *testing.T) {
 }
 
 func TestRunnerLateFireFails(t *testing.T) {
-	r, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
+	r, cfg, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
 	p.EndTS = time.Now().Unix() - 10 // window already over
-	r.Run(context.Background(), p, r.Cfg.Satellites[2])
+	r.Run(context.Background(), p, cfg.Satellites[2])
 	state, _ := passState(t, st, p.ID)
 	if state != store.StateFailed {
 		t.Fatalf("state = %s, want failed", state)

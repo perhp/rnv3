@@ -121,14 +121,16 @@ func (s *Store) UpcomingPasses(now time.Time, limit int) ([]Pass, error) {
 	return out, rows.Err()
 }
 
-// NextScheduled returns the next pass in scheduled state starting after now,
-// or nil when the plan is empty.
+// NextScheduled returns the next pass in scheduled state whose window has not
+// closed yet — including one already in progress (daemon started mid-pass, or
+// the previous capture overran this AOS), so the remaining window can still
+// be captured. Nil when the plan is empty.
 func (s *Store) NextScheduled(now time.Time) (*Pass, error) {
 	p := &Pass{}
 	err := s.DB.QueryRow(`SELECT id, satellite, start_ts, end_ts, max_elevation,
 			COALESCE(start_azimuth, 0), COALESCE(azimuth_at_max, 0),
 			COALESCE(direction, ''), state, COALESCE(error_text, '')
-		FROM passes WHERE state = ? AND start_ts > ? ORDER BY start_ts LIMIT 1`,
+		FROM passes WHERE state = ? AND end_ts > ? ORDER BY start_ts LIMIT 1`,
 		StateScheduled, now.Unix()).
 		Scan(&p.ID, &p.Satellite, &p.StartTS, &p.EndTS, &p.MaxElevation,
 			&p.StartAzimuth, &p.AzimuthAtMax, &p.Direction, &p.State, &p.ErrorText)

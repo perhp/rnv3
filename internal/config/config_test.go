@@ -48,3 +48,39 @@ func TestValidateCatchesBadValues(t *testing.T) {
 		t.Fatal("expected validation errors")
 	}
 }
+
+func TestValidateRefreshHourRange(t *testing.T) {
+	for _, h := range []int{-1, -48, 24, 100} {
+		cfg := Default()
+		cfg.Scheduling.TLERefreshHourUTC = h
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("tle_refresh_hour_utc %d accepted", h)
+		}
+	}
+	cfg := Default()
+	cfg.Scheduling.TLERefreshHourUTC = 23
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("hour 23 rejected: %v", err)
+	}
+}
+
+func TestRestartOnlyFieldsChanged(t *testing.T) {
+	old := Default()
+	fresh := Default()
+	if got := RestartOnlyFieldsChanged(old, fresh); len(got) != 0 {
+		t.Errorf("identical configs flagged: %v", got)
+	}
+	fresh.Web.Listen = ":8080"
+	fresh.Paths.DataDir = "/elsewhere"
+	got := RestartOnlyFieldsChanged(old, fresh)
+	if len(got) != 2 {
+		t.Errorf("changed = %v, want [web.listen paths.data_dir]", got)
+	}
+	// Runtime-reloadable settings must not be flagged.
+	fresh2 := Default()
+	fresh2.Satellites[0].Enabled = true
+	fresh2.Notifications.Telegram.Enabled = true
+	if got := RestartOnlyFieldsChanged(old, fresh2); len(got) != 0 {
+		t.Errorf("reloadable changes flagged: %v", got)
+	}
+}

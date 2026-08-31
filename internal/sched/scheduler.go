@@ -10,8 +10,8 @@ import (
 	"github.com/perhp/rnv3/internal/tle"
 )
 
-// CaptureRunner executes one pass. M2 provides the real SatDump runner; until
-// then NotImplementedRunner records why nothing was captured.
+// CaptureRunner executes one pass. M2 provides the real SatDump runner;
+// NotImplementedRunner stands in for dry-run mode.
 type CaptureRunner interface {
 	// Run owns the pass from AOS: it must move the pass out of the scheduled
 	// state and leave it in a terminal state before returning.
@@ -19,9 +19,11 @@ type CaptureRunner interface {
 }
 
 // Scheduler plans passes and fires the capture runner at AOS. It replaces
-// RN2's cron + at + atq machinery with a single loop.
+// RN2's cron + at + atq machinery with a single loop. Config is snapshotted
+// from the provider once per iteration, so a SIGHUP reload takes effect at
+// the next loop turn without racing an in-flight capture.
 type Scheduler struct {
-	cfg    *config.Config
+	prov   *config.Provider
 	st     *store.Store
 	tles   *tle.Manager
 	runner CaptureRunner
@@ -29,8 +31,8 @@ type Scheduler struct {
 	replanCh chan struct{}
 }
 
-func New(cfg *config.Config, st *store.Store, tles *tle.Manager, runner CaptureRunner) *Scheduler {
-	return &Scheduler{cfg: cfg, st: st, tles: tles, runner: runner, replanCh: make(chan struct{}, 1)}
+func New(prov *config.Provider, st *store.Store, tles *tle.Manager, runner CaptureRunner) *Scheduler {
+	return &Scheduler{prov: prov, st: st, tles: tles, runner: runner, replanCh: make(chan struct{}, 1)}
 }
 
 // Replan requests an asynchronous replan (config reload, manual trigger).
@@ -53,16 +55,20 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 
 	for {
+		cfg := s.prov.Get()
 		now := time.Now()
 		next, err := s.st.NextScheduled(now)
 		if err != nil {
 			return err
 		}
 
-		wake := s.nextTLERefresh(now)
+		wake := s.nextTLERefresh(cfg, now)
 		wakeReason := "tle-refresh"
 		if next != nil {
 			aos := time.Unix(next.StartTS, 0)
+			if aos.Before(now) {
+				aos = now // pass already in progress: capture the remaining window
+			}
 			if aos.Before(wake) {
 				wake = aos
 				wakeReason = "pass"
@@ -85,7 +91,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			}
 		case <-timer.C:
 			if wakeReason == "pass" && next != nil {
-				s.runner.Run(ctx, *next, s.satByName(next.Satellite))
+				s.runner.Run(ctx, *next, satByName(cfg, next.Satellite))
 			} else {
 				if err := s.plan(ctx); err != nil {
 					slog.Error("scheduled replan failed", "err", err)
@@ -95,10 +101,12 @@ func (s *Scheduler) Run(ctx context.Context) error {
 	}
 }
 
-// plan refreshes TLEs when stale and rebuilds + persists the pass plan.
+// plan refreshes TLEs when stale, sweeps zombie passes, and rebuilds +
+// persists the pass plan.
 func (s *Scheduler) plan(ctx context.Context) error {
+	cfg := s.prov.Get()
 	var ids []int
-	for _, sat := range s.cfg.EnabledSatellites() {
+	for _, sat := range cfg.EnabledSatellites() {
 		ids = append(ids, sat.NoradID)
 	}
 
@@ -130,7 +138,13 @@ func (s *Scheduler) plan(ctx context.Context) error {
 	} else if n > 0 {
 		slog.Info("marked missed passes", "count", n)
 	}
-	cands, err := BuildPlan(s.cfg, set, now)
+	if n, err := s.st.FailStaleRunning(now); err != nil {
+		slog.Warn("cannot sweep stale running passes", "err", err)
+	} else if n > 0 {
+		slog.Warn("failed passes stuck in capturing/processing", "count", n)
+	}
+
+	cands, err := BuildPlan(cfg, set, now)
 	if err != nil {
 		return err
 	}
@@ -146,22 +160,27 @@ func (s *Scheduler) plan(ctx context.Context) error {
 		}
 	}
 	slog.Info("pass plan updated", "scheduled", scheduled, "skipped", skipped,
-		"window_days", s.cfg.Scheduling.DaysAhead)
+		"window_days", cfg.Scheduling.DaysAhead)
 	return nil
 }
 
-// nextTLERefresh returns the next daily refresh instant (configured UTC hour).
-func (s *Scheduler) nextTLERefresh(now time.Time) time.Time {
+// nextTLERefresh returns the next daily refresh instant (configured UTC hour,
+// validated to 0..23 at config load; clamped anyway for defense in depth).
+func (s *Scheduler) nextTLERefresh(cfg *config.Config, now time.Time) time.Time {
+	hour := cfg.Scheduling.TLERefreshHourUTC
+	if hour < 0 || hour > 23 {
+		hour = 0
+	}
 	u := now.UTC()
-	next := time.Date(u.Year(), u.Month(), u.Day(), s.cfg.Scheduling.TLERefreshHourUTC, 1, 0, 0, time.UTC)
+	next := time.Date(u.Year(), u.Month(), u.Day(), hour, 1, 0, 0, time.UTC)
 	if !next.After(u) {
 		next = next.Add(24 * time.Hour)
 	}
 	return next
 }
 
-func (s *Scheduler) satByName(name string) config.Satellite {
-	for _, sat := range s.cfg.Satellites {
+func satByName(cfg *config.Config, name string) config.Satellite {
+	for _, sat := range cfg.Satellites {
 		if sat.Name == name {
 			return sat
 		}
@@ -169,16 +188,15 @@ func (s *Scheduler) satByName(name string) config.Satellite {
 	return config.Satellite{Name: name}
 }
 
-// NotImplementedRunner is the M1 placeholder capture runner: it marks the
-// pass skipped, with a reason that distinguishes dry-run mode from the
-// capture pipeline simply not existing yet.
+// NotImplementedRunner is the dry-run capture runner: it marks the pass
+// skipped with an honest reason instead of touching the SDR.
 type NotImplementedRunner struct {
 	St     *store.Store
 	DryRun bool
 }
 
 func (r *NotImplementedRunner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
-	reason := "capture pipeline not implemented yet (M2)"
+	reason := "capture pipeline disabled"
 	if r.DryRun {
 		reason = "dry-run mode"
 	}
