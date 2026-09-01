@@ -2,6 +2,7 @@ package process
 
 import (
 	"encoding/xml"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,44 @@ func TestPolarPlotSVG(t *testing.T) {
 				t.Errorf("%s: missing %q", variant, want)
 			}
 		}
+	}
+}
+
+// The two variants use opposite radial axes (RN2: rlim(0, 92) for az/el,
+// rlim(90, 0) for direction): a high-elevation point sits near the rim on the
+// az/el plot and near the centre on the direction plot.
+func TestPolarVariantsUseOppositeRadialAxes(t *testing.T) {
+	c := polarSize / 2
+	dist := func(x, y float64) float64 { return math.Hypot(x-c, y-c) }
+
+	ax, ay := polarPoint("azel", 90, 80)
+	dx, dy := polarPoint("direction", 90, 80)
+	if dist(ax, ay) <= dist(dx, dy) {
+		t.Errorf("az/el should put 80° near the rim: azel r=%.1f, direction r=%.1f", dist(ax, ay), dist(dx, dy))
+	}
+	if r := polarRadius("azel", 0); r != 0 {
+		t.Errorf("az/el horizon should be at the centre, got r=%.1f", r)
+	}
+	if r := polarRadius("direction", 90); r != 0 {
+		t.Errorf("direction zenith should be at the centre, got r=%.1f", r)
+	}
+	// Both agree on azimuth orientation: east is to the right.
+	if ax <= c || dx <= c {
+		t.Errorf("east should be right of centre: azel x=%.1f, direction x=%.1f", ax, dx)
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "azel.svg")
+	if err := PolarPlot("azel", "NOAA 19", syntheticTrack(), "northbound", 30, out); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(out)
+	svg := string(raw)
+	if strings.Contains(svg, ">NE<") || !strings.Contains(svg, ">45°<") {
+		t.Error("az/el plot should label spokes in degrees, not compass points")
+	}
+	if !strings.Contains(svg, ">80°<") {
+		t.Error("az/el plot should have an 80° elevation ring")
 	}
 }
 
