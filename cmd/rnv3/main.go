@@ -198,6 +198,11 @@ func run(configPath string, checkOnly bool) error {
 				fresh.Web.Listen = cur.Web.Listen
 				fresh.Web.TLS = cur.Web.TLS
 				fresh.Paths.DataDir = cur.Paths.DataDir
+				fresh.Scheduling.DryRun = cur.Scheduling.DryRun
+			}
+			if !strings.EqualFold(fresh.LogLevel, cur.LogLevel) {
+				slog.SetDefault(newLogger(fresh.LogLevel))
+				slog.Info("log level changed", "level", fresh.LogLevel)
 			}
 			prov.Set(fresh)
 			syncSatdumpCfg(prov)

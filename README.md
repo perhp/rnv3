@@ -23,8 +23,12 @@ go run ./cmd/rnv3 -config config.example.yaml
 .\deploy\deploy.ps1 -PiHost raspinoaa -PiUser <user>
 ```
 
-Cross-compiles a static linux/arm64 binary, copies it over SSH, and runs `deploy/install.sh`
-(binary → `/usr/local/bin/rnv3`, config → `/etc/rnv3/config.yaml`, systemd unit `rnv3.service`).
+Cross-compiles static linux/arm64 binaries (`rnv3`, `rnv3-migrate`), copies them over SSH, and
+runs `deploy/install.sh` (SatDump/rtl-sdr builds when missing, udev/blacklists, ramfs, binaries →
+`/usr/local/bin`, config → `/etc/rnv3/config.yaml`, systemd unit `rnv3.service`).
+
+Migrating from raspberry-noaa-v2 — side-by-side validation, then `deploy/cutover.sh` — is
+walked through in [deploy/README.md](deploy/README.md).
 
 ## Layout
 

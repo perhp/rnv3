@@ -2,19 +2,30 @@
 # __USER__ with the station user (never root).
 [Unit]
 Description=rnv3 NOAA/Meteor ground station daemon
-After=network-online.target time-sync.target
+Documentation=https://github.com/perhp/rnv3
+After=network-online.target time-sync.target var-ramfs.mount
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=__USER__
 Group=__USER__
+# USB access to the SDR (udev rules grant plugdev).
+SupplementaryGroups=plugdev
+ExecStartPre=/usr/local/bin/rnv3 -config /etc/rnv3/config.yaml -check
 ExecStart=/usr/local/bin/rnv3 -config /etc/rnv3/config.yaml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5
+# The daemon stops the scheduler and lets an in-flight capture reach a
+# terminal state before exiting (up to 85 s), then drains pushes briefly.
+TimeoutStopSec=95
+KillMode=mixed
 # Binding :80/:443 as a non-root user:
 AmbientCapabilities=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+# SatDump keeps a lot of files open during a live decode.
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

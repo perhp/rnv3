@@ -73,9 +73,10 @@ func TestRestartOnlyFieldsChanged(t *testing.T) {
 	}
 	fresh.Web.Listen = ":8080"
 	fresh.Paths.DataDir = "/elsewhere"
+	fresh.Scheduling.DryRun = !old.Scheduling.DryRun
 	got := RestartOnlyFieldsChanged(old, fresh)
-	if len(got) != 2 {
-		t.Errorf("changed = %v, want [web.listen paths.data_dir]", got)
+	if len(got) != 3 {
+		t.Errorf("changed = %v, want [web.listen paths.data_dir scheduling.dry_run]", got)
 	}
 	// Runtime-reloadable settings must not be flagged.
 	fresh2 := Default()

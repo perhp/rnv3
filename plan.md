@@ -252,6 +252,15 @@ binary, unit file, udev rules, directories, SatDump.
   deploy with the user's tokens.)
 - [ ] **M6 — Cutover**: install script hardening, disable old cron/at jobs, run rnv3 as the sole
   owner of the SDR for a week, then retire the old stack on the Pi.
+  (Tooling complete 2026-09-01: `deploy/install.sh` now provisions everything RN2's Ansible roles
+  did — apt deps, SatDump 1.2.2 and osmocom rtl-sdr source builds when missing, kernel-module
+  blacklists, udev rules, plugdev, /var/ramfs tmpfs, both binaries, config, dirs, hardened unit;
+  `deploy/cutover.sh` (with `--dry-run`/`--revert`) removes RN2's cron entries and `at` jobs,
+  disables nginx/php-fpm, imports panel.db, moves the panel to :80 and starts rnv3;
+  `deploy/deploy.ps1` ships rnv3 + rnv3-migrate; `deploy/README.md` is the runbook: side-by-side
+  in dry-run on :8080 → real passes with RN2 paused → cutover → a week solo → retire RN2.
+  **Remaining: the on-Pi run itself** — first deploy, the M1–M5 validations against the live
+  station, then cutover.)
 
 Development stays on Windows; every milestone validates on the Pi ("raspinoaa") — the deploy
 artifact is one binary, so the exec-bit / git-pull pain of the old flow disappears.

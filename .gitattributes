@@ -1,0 +1,11 @@
+# Files that run on the Pi must stay LF regardless of core.autocrlf.
+*.sh text eol=lf
+*.service text eol=lf
+*.yaml text eol=lf
+*.j2 text eol=lf
+*.go text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf

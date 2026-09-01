@@ -35,5 +35,8 @@ func RestartOnlyFieldsChanged(old, fresh *Config) []string {
 	if old.Paths.DataDir != fresh.Paths.DataDir {
 		changed = append(changed, "paths.data_dir")
 	}
+	if old.Scheduling.DryRun != fresh.Scheduling.DryRun {
+		changed = append(changed, "scheduling.dry_run") // selects the capture runner at startup
+	}
 	return changed
 }
