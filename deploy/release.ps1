@@ -9,6 +9,22 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
+
+# Find the Go toolchain: PATH first, then the usual install locations.
+function Find-Go {
+    $cmd = Get-Command go -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    foreach ($candidate in @(
+        "$env:LOCALAPPDATA\go\bin\go.exe",
+        "$env:ProgramFiles\Go\bin\go.exe",
+        "$env:USERPROFILE\go\bin\go.exe",
+        "C:\Go\bin\go.exe")) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+    throw "Go was not found. Install it from https://go.dev/dl/ (or put go.exe on your PATH)."
+}
+$go = Find-Go
+Write-Host "==> Using $go"
 $version = (git -C $repo describe --tags --always --dirty 2>$null)
 if (-not $version) { $version = "dev" }
 $dist = "$repo\dist"
@@ -17,9 +33,9 @@ New-Item -ItemType Directory -Force $dist | Out-Null
 
 Write-Host "==> Building rnv3 + rnv3-migrate $version for linux/$Arch"
 $env:GOOS = "linux"; $env:GOARCH = $Arch; $env:CGO_ENABLED = "0"
-go build -C $repo -trimpath -ldflags "-s -w -X main.version=$version" -o "$dist\rnv3" ./cmd/rnv3
+& $go build -C $repo -trimpath -ldflags "-s -w -X main.version=$version" -o "$dist\rnv3" ./cmd/rnv3
 if ($LASTEXITCODE -ne 0) { throw "rnv3 build failed" }
-go build -C $repo -trimpath -ldflags "-s -w" -o "$dist\rnv3-migrate" ./tools/migrate
+& $go build -C $repo -trimpath -ldflags "-s -w" -o "$dist\rnv3-migrate" ./tools/migrate
 if ($LASTEXITCODE -ne 0) { throw "rnv3-migrate build failed" }
 Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
 
@@ -29,7 +45,7 @@ Copy-Item "$dist\rnv3-migrate" "$payload\rnv3-migrate" -Force
 Copy-Item "$repo\deploy\install.sh", "$repo\deploy\cutover.sh", "$repo\deploy\rnv3.service", "$repo\config.example.yaml" $payload -Force
 
 Write-Host "==> Building rnv3-setup $version for this PC"
-go build -C $repo -trimpath -ldflags "-s -w -X main.version=$version" -o "$dist\rnv3-setup.exe" ./cmd/rnv3-setup
+& $go build -C $repo -trimpath -ldflags "-s -w -X main.version=$version" -o "$dist\rnv3-setup.exe" ./cmd/rnv3-setup
 if ($LASTEXITCODE -ne 0) { throw "rnv3-setup build failed" }
 
 Write-Host "==> Done:"
