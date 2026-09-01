@@ -262,6 +262,28 @@ binary, unit file, udev rules, directories, SatDump.
   **Remaining: the on-Pi run itself** — first deploy, the M1–M5 validations against the live
   station, then cutover.)
 
+- [ ] **M7 — `rnv3-setup`: interactive installer that drives the Pi over SSH.** Decided
+  2026-09-01 (user choices): runs on the Windows PC; own SSH client (`golang.org/x/crypto/ssh`,
+  password auth, host key TOFU in `%APPDATA%\rnv3\known_hosts`); remembers host+user in
+  `%APPDATA%\rnv3\setup.json`, never the password; plain `ssh-keygen`-style prompts with defaults in
+  brackets, a small multi-select for satellites, `--answers file.yaml` for headless reruns.
+  Flow: connect → probe the Pi (os-release, arch, RAM, SatDump/rtl_sdr presence, RTL-SDR on USB,
+  existing rnv3 config, RN2 checkout + `settings.yml` + `panel.db`) → mode menu
+  (side-by-side install in dry-run on :8080 / fresh install / cutover / reconfigure) → questions:
+  essentials always (station, SDR, satellites, admin lock + password hashed locally, RN2 history
+  import), then skippable sections (notifications, daily & retention, panel instruments & TLS,
+  advanced SDR & processing) — all prefilled from RN2's `settings.yml` when present, or from the
+  existing `/etc/rnv3/config.yaml` in reconfigure mode → show the resulting config → upload →
+  run `install.sh` under `nohup`, streaming output (SatDump/rtl-sdr are built automatically when
+  missing) → tail the journal until "pass plan updated" → print the panel URL. Cutover mode runs
+  `cutover.sh` (waits for RN2's running capture) after the user types CUTOVER. The tool embeds the
+  linux/arm64 `rnv3` + `rnv3-migrate` binaries and `deploy/*` (a release script builds them
+  first), so `rnv3-setup.exe` is self-contained; `--payload-dir` overrides for development.
+  Layout: `cmd/rnv3-setup/` (main, embed), `internal/setup/` (sshclient, probe, rn2settings,
+  wizard, configgen, install, cutover). `deploy.ps1` stays as the dev fast path.
+  *Exit: a fresh Pi image → running station without opening a terminal on the Pi; your Pi →
+  side-by-side install and cutover entirely from the tool.*
+
 Development stays on Windows; every milestone validates on the Pi ("raspinoaa") — the deploy
 artifact is one binary, so the exec-bit / git-pull pain of the old flow disappears.
 
