@@ -18,8 +18,54 @@ your PC without ever opening a terminal on the Pi.
 
 ---
 
+## Quick start
+
+Everything happens on your PC; the Pi only needs Raspberry Pi OS with SSH enabled (see
+[What you need](#1-what-you-need)). Skip the install lines for tools you already have —
+`git --version` and `go version` tell you.
+
+**Windows** (PowerShell)
+
+```powershell
+winget install --id Git.Git -e          # step 1: Git
+winget install --id GoLang.Go -e        # step 2: Go
+# step 3: close and reopen the terminal so PATH picks up the new tools
+git clone https://github.com/perhp/rnv3.git   # step 4: get rnv3
+cd rnv3
+.\deploy\release.ps1                    # step 5: build the setup tool → dist\rnv3-setup.exe
+.\dist\rnv3-setup.exe                   # step 6: run it — it installs rnv3 on the Pi
+```
+
+**macOS** (Terminal)
+
+```bash
+xcode-select --install                  # step 1: Git (Apple's command line tools)
+brew install go                         # step 2: Go — or the .pkg from https://go.dev/dl/
+git clone https://github.com/perhp/rnv3.git   # step 3: get rnv3
+cd rnv3
+./deploy/release.sh                     # step 4: build the setup tool → dist/rnv3-setup
+./dist/rnv3-setup                       # step 5: run it — it installs rnv3 on the Pi
+```
+
+**Linux** (Debian / Ubuntu; other distros: the same packages from your package manager)
+
+```bash
+sudo apt install -y git golang-go       # step 1: Git and Go (an older Go fetches the right one itself)
+git clone https://github.com/perhp/rnv3.git   # step 2: get rnv3
+cd rnv3
+./deploy/release.sh                     # step 3: build the setup tool → dist/rnv3-setup
+./dist/rnv3-setup                       # step 4: run it — it installs rnv3 on the Pi
+```
+
+The setup tool asks for the Pi's address and password, then a few questions about your station,
+and ends by printing the panel address. Details, migration from raspberry-noaa-v2 and everything
+else below.
+
+---
+
 ## Contents
 
+0. [Quick start](#quick-start)
 1. [What you need](#1-what-you-need)
 2. [Install on a new Pi](#2-install-on-a-new-pi)
 3. [Migrate from raspberry-noaa-v2](#3-migrate-from-raspberry-noaa-v2)
@@ -48,10 +94,11 @@ your PC without ever opening a terminal on the Pi.
 - SSH enabled, and you know the user name and password (Raspberry Pi Imager lets you set both)
 - the Pi on your network, reachable by name (e.g. `raspinoaa`) or IP
 
-**On your PC** (Windows; macOS/Linux work too with the same commands)
+**On your PC** (Windows, macOS or Linux — the build tool is the same Go program on all three)
 
 - [Go](https://go.dev/dl/) 1.27 or newer, to build the tools once (an older 1.21+ Go fetches it
-  automatically; the scripts find Go in its usual install folder even if it is not on your PATH)
+  automatically; the wrapper scripts find Go in its usual install folder even if it is not on
+  your PATH)
 - Git, to clone this repository
 
 That's all. SatDump and the SDR drivers are installed on the Pi by rnv3 itself.
@@ -65,17 +112,29 @@ That's all. SatDump and the SDR drivers are installed on the Pi by rnv3 itself.
 ```powershell
 git clone https://github.com/perhp/rnv3.git
 cd rnv3
-.\deploy\release.ps1
+.\deploy\release.ps1          # Windows
+./deploy/release.sh           # macOS / Linux
 ```
 
-This cross-compiles the Pi binaries and packs them into **`dist\rnv3-setup.exe`** — a
-self-contained installer for your PC. You only rebuild it when you update rnv3.
+Both are thin wrappers around `go run ./tools/release` (they only locate Go), which
+cross-compiles the Pi binaries and packs them into **`dist\rnv3-setup.exe`** (Windows) or
+**`dist/rnv3-setup`** (macOS / Linux) — a self-contained installer for your PC. You only
+rebuild it when you update rnv3. Options, same on every OS (PowerShell also accepts them
+capitalised, e.g. `-Arch`):
+
+| Option | Use |
+|---|---|
+| `-target darwin/arm64` | build the installer for *another* PC — here a Mac; output `dist/rnv3-setup-darwin-arm64` |
+| `-arch amd64` | the station is an x64 PC running Debian instead of a Pi (default `arm64`) |
 
 ### Step 2 — run it
 
 ```powershell
-.\dist\rnv3-setup.exe
+.\dist\rnv3-setup.exe         # Windows
+./dist/rnv3-setup             # macOS / Linux
 ```
+
+(The rest of this guide shows the Windows form; on macOS / Linux substitute `./dist/rnv3-setup`.)
 
 The tool asks a series of questions. Menus are driven with the **arrow keys** (Space toggles
 items in a list, Enter confirms, y/n or ←/→ for yes/no); for typed values, press **Enter** to
@@ -178,6 +237,7 @@ The setup tool is a front end for two scripts you can also run yourself:
 
 ```powershell
 .\deploy\deploy.ps1 -PiHost raspinoaa -PiUser pi -InstallArgs "--no-start"   # build, copy, install
+./deploy/deploy.sh raspinoaa -user pi -install-args "--no-start"             # macOS / Linux
 ```
 
 then on the Pi edit `/etc/rnv3/config.yaml` (station and SDR from RN2's `settings.yml`,
@@ -256,7 +316,7 @@ rnv3 -config /etc/rnv3/config.yaml -publish-test   # ping every event-feed recei
 
 ```powershell
 git pull
-.\deploy\release.ps1
+.\deploy\release.ps1       # ./deploy/release.sh on macOS / Linux
 .\dist\rnv3-setup.exe      # → Reconfigure
 ```
 
@@ -266,7 +326,8 @@ idempotent: binaries are replaced, your config and data are kept, the SatDump/rt
 skipped when already present.
 
 Developers with SSH keys on the Pi can skip the tool:
-`.\deploy\deploy.ps1 -PiHost raspinoaa -PiUser pi -InstallArgs "--skip-builds"`.
+`.\deploy\deploy.ps1 -PiHost raspinoaa -PiUser pi -InstallArgs "--skip-builds"`
+(`./deploy/deploy.sh raspinoaa -install-args "--skip-builds"` on macOS / Linux).
 
 ---
 
@@ -366,7 +427,14 @@ It isn't hung, it's compiling; a Pi 4 needs an hour or more. Progress lines keep
 go build ./...
 go test ./...
 go run ./cmd/rnv3 -config config.example.yaml
+go run ./tools/release                        # dist/: Pi binaries + rnv3-setup for this PC
+go run ./tools/release -target linux/amd64    # rnv3-setup for another OS/arch
+go run ./tools/release -deploy raspinoaa      # build + scp + install.sh on the Pi
 ```
+
+`-deploy` uses the `ssh`/`scp` commands on your PC (Windows 10+, macOS and Linux all ship
+them) and expects your SSH key to be on the Pi; `rnv3-setup` itself needs neither — it carries
+its own SSH client and asks for the password.
 
 Everything except SatDump itself runs and is tested on Windows/macOS/Linux; the capture path
 is tested against a fake SatDump, the web panel against a seeded database, the setup tool
@@ -386,7 +454,8 @@ against an in-process SSH server, the event feed against an in-process receiver.
 | `internal/notify`, `jobs` | push channels, watchdog, best-of-day, retention |
 | `internal/publish`, `hostinfo` | event webhooks and the host readings they carry |
 | `internal/setup` | SSH client, probe, wizard, installer orchestration |
-| `deploy/` | `install.sh`, `cutover.sh`, systemd unit, `release.ps1`, `deploy.ps1` (dev fast path) |
+| `tools/release` | the build tool: Pi binaries, payload, `rnv3-setup` for any OS, `-deploy` dev fast path |
+| `deploy/` | `install.sh`, `cutover.sh`, systemd unit, and the `release`/`deploy` `.ps1`/`.sh` wrappers around `tools/release` |
 | `docs/` | the event webhook contract |
 
 [plan.md](plan.md) holds the investigation of RN2, the design decisions and the milestone

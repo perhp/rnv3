@@ -6,6 +6,6 @@
 *.db-wal
 *.db-shm
 
-# rnv3-setup payload (assembled by deploy/release.ps1)
+# rnv3-setup payload (assembled by tools/release)
 /cmd/rnv3-setup/payload/*
 !/cmd/rnv3-setup/payload/README.txt

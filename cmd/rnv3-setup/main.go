@@ -19,7 +19,7 @@ import (
 	"github.com/perhp/rnv3/internal/setup"
 )
 
-// payload holds the Pi-side files; deploy/release.ps1 fills the directory
+// payload holds the Pi-side files; tools/release fills the directory
 // before building (binaries are git-ignored, so a plain `go build` yields a
 // tool that needs --payload-dir).
 //
@@ -29,7 +29,7 @@ var payloadFS embed.FS
 var (
 	version = "dev"
 	// payloadArch is the GOARCH of the embedded Pi binaries (set by
-	// deploy/release.ps1 via -ldflags).
+	// tools/release via -ldflags).
 	payloadArch = "arm64"
 )
 
@@ -137,7 +137,7 @@ func run(host, user, answersPath, saveAnswers, payloadDir string) error {
 	}
 	p.Say("%s", probe.Summary())
 	if want := unameFor(payloadArch); probe.Arch != want {
-		return fmt.Errorf("the Pi reports architecture %q but this rnv3-setup carries linux/%s binaries (expects %q); build with deploy\\release.ps1 -Arch %s",
+		return fmt.Errorf("the Pi reports architecture %q but this rnv3-setup carries linux/%s binaries (expects %q); build with `go run ./tools/release -arch %s`",
 			probe.Arch, payloadArch, want, goArchFor(probe.Arch))
 	}
 

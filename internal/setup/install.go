@@ -30,7 +30,7 @@ func (p Payload) Check() error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("payload incomplete (%s): build rnv3-setup with deploy/release.ps1, or pass --payload-dir", strings.Join(missing, ", "))
+		return fmt.Errorf("payload incomplete (%s): build rnv3-setup with `go run ./tools/release`, or pass --payload-dir", strings.Join(missing, ", "))
 	}
 	return nil
 }

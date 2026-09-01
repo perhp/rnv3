@@ -1,16 +1,14 @@
-# Build the release set: linux/arm64 rnv3 + rnv3-migrate, and rnv3-setup for
-# this PC with those binaries and the deploy scripts embedded.
+# Thin wrapper for the release tool: finds Go (even when it is not on PATH)
+# and runs `go run ./tools/release` with whatever arguments you pass.
 #
-#   .\deploy\release.ps1 [-Arch arm64]
+#   .\deploy\release.ps1                        # dist\rnv3-setup.exe for this PC
+#   .\deploy\release.ps1 -target darwin/arm64   # the setup tool for a Mac
+#   .\deploy\release.ps1 -arch amd64            # Pi binaries for an x64 station
 #
-# Output in dist\: rnv3, rnv3-migrate (Pi), rnv3-setup.exe (PC).
-param(
-    [string]$Arch = "arm64"
-)
+# All build logic lives in tools/release/main.go.
 $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 
-# Find the Go toolchain: PATH first, then the usual install locations.
 function Find-Go {
     $cmd = Get-Command go -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
@@ -23,31 +21,15 @@ function Find-Go {
     }
     throw "Go was not found. Install it from https://go.dev/dl/ (or put go.exe on your PATH)."
 }
-$go = Find-Go
-Write-Host "==> Using $go"
-$version = (git -C $repo describe --tags --always --dirty 2>$null)
-if (-not $version) { $version = "dev" }
-$dist = "$repo\dist"
-$payload = "$repo\cmd\rnv3-setup\payload"
-New-Item -ItemType Directory -Force $dist | Out-Null
 
-Write-Host "==> Building rnv3 + rnv3-migrate $version for linux/$Arch"
-$env:GOOS = "linux"; $env:GOARCH = $Arch; $env:CGO_ENABLED = "0"
-& $go build -C $repo -trimpath -ldflags "-s -w -X main.version=$version" -o "$dist\rnv3" ./cmd/rnv3
-if ($LASTEXITCODE -ne 0) { throw "rnv3 build failed" }
-& $go build -C $repo -trimpath -ldflags "-s -w" -o "$dist\rnv3-migrate" ./tools/migrate
-if ($LASTEXITCODE -ne 0) { throw "rnv3-migrate build failed" }
-Remove-Item Env:GOOS, Env:GOARCH, Env:CGO_ENABLED
+# PowerShell parameters are case-insensitive (-Arch, -Target); Go's flag parser
+# is not. Lowercase flag names before forwarding; values are passed untouched.
+$forward = @(foreach ($a in $args) {
+    if ($a -is [string] -and $a -match '^-{1,2}[A-Za-z][A-Za-z-]*(=.*)?$') {
+        $name, $value = $a -split '=', 2
+        if ($null -ne $value) { "$($name.ToLower())=$value" } else { $name.ToLower() }
+    } else { $a }
+})
 
-Write-Host "==> Assembling the rnv3-setup payload"
-Copy-Item "$dist\rnv3" "$payload\rnv3" -Force
-Copy-Item "$dist\rnv3-migrate" "$payload\rnv3-migrate" -Force
-Copy-Item "$repo\deploy\install.sh", "$repo\deploy\cutover.sh", "$repo\deploy\rnv3.service", "$repo\config.example.yaml" $payload -Force
-
-Write-Host "==> Building rnv3-setup $version for this PC"
-& $go build -C $repo -trimpath -ldflags "-s -w -X main.version=$version" -o "$dist\rnv3-setup.exe" ./cmd/rnv3-setup
-if ($LASTEXITCODE -ne 0) { throw "rnv3-setup build failed" }
-
-Write-Host "==> Done:"
-Get-ChildItem $dist | ForEach-Object { Write-Host ("    {0,-18} {1,10:N0} bytes" -f $_.Name, $_.Length) }
-Write-Host "Run: .\dist\rnv3-setup.exe"
+& (Find-Go) run -C $repo ./tools/release @forward
+exit $LASTEXITCODE
