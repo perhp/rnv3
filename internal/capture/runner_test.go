@@ -2,14 +2,18 @@ package capture
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/perhp/rnv3/internal/config"
+	"github.com/perhp/rnv3/internal/notify"
 	"github.com/perhp/rnv3/internal/store"
 )
 
@@ -246,6 +250,43 @@ func TestRunnerAggregatesRunAfterTerminalState(t *testing.T) {
 	}
 }
 
+type recordingNotifier struct {
+	mu     sync.Mutex
+	events []notify.PassEvent
+}
+
+func (r *recordingNotifier) PassDecoded(_ context.Context, ev notify.PassEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, ev)
+}
+
+func TestRunnerNotifiesDecodedPass(t *testing.T) {
+	r, cfg, _, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
+	rec := &recordingNotifier{}
+	r.Notify = rec
+	r.Run(context.Background(), p, cfg.Satellites[2])
+	r.WaitPushes()
+	if len(rec.events) != 1 {
+		t.Fatalf("notifications = %d, want 1", len(rec.events))
+	}
+	ev := rec.events[0]
+	if ev.PassID != p.ID || ev.Satellite != "NOAA 19" || ev.SatType != config.SatNOAAAPT || ev.Direction != "Southbound" ||
+		ev.Gain != 29.7 || ev.MaxSNR == nil || *ev.MaxSNR != 11.5 || len(ev.Images) != 2 {
+		t.Errorf("event = %+v", ev)
+	}
+
+	// A failed pass notifies nobody.
+	r2, cfg2, _, p2 := testRunner(t, "no-images", config.Default().Satellites[2])
+	rec2 := &recordingNotifier{}
+	r2.Notify = rec2
+	r2.Run(context.Background(), p2, cfg2.Satellites[2])
+	r2.WaitPushes()
+	if len(rec2.events) != 0 {
+		t.Error("failed pass must not be pushed")
+	}
+}
+
 // TestRunnerSkipsCancelledPass: a pass cancelled between the scheduler's
 // read and the capture start must not be captured (or un-cancelled).
 func TestRunnerSkipsCancelledPass(t *testing.T) {
@@ -270,5 +311,81 @@ func TestRunnerLateFireFails(t *testing.T) {
 	state, _ := passState(t, st, p.ID)
 	if state != store.StateFailed {
 		t.Fatalf("state = %s, want failed", state)
+	}
+}
+
+// partialProcessor mimics a pipeline that produced some images and then
+// failed: the runner must treat that as a failed pass, not a capture.
+type partialProcessor struct{ InventoryProcessor }
+
+func (partialProcessor) Process(context.Context, store.Pass, config.Satellite, string, string, bool) ([]string, error) {
+	return []string{"/img/partial-MCIR.jpg"}, errors.New("thumbnail write failed")
+}
+
+func TestRunnerProcessingErrorFailsPass(t *testing.T) {
+	r, cfg, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
+	r.Processor = partialProcessor{}
+	rec := &recordingNotifier{}
+	r.Notify = rec
+	r.Run(context.Background(), p, cfg.Satellites[2])
+	r.WaitPushes()
+	state, errText := passState(t, st, p.ID)
+	if state != store.StateFailed || !strings.Contains(errText, "post-processing failed: thumbnail write failed") {
+		t.Errorf("state = %s (%s), want failed", state, errText)
+	}
+	if len(rec.events) != 0 {
+		t.Error("a partially processed pass must not be pushed")
+	}
+	if entries, _ := os.ReadDir(cfg.Paths.Work); len(entries) == 0 {
+		t.Error("work dir should be kept for debugging after a processing failure")
+	}
+}
+
+// blockingContributor holds the upload until released, so the test can see
+// that Run returned without waiting for it.
+type blockingContributor struct {
+	release chan struct{}
+	seen    chan string
+}
+
+func (b *blockingContributor) ContributeCADU(ctx context.Context, path string) error {
+	b.seen <- path
+	select {
+	case <-b.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestRunnerContributesCADUInBackground(t *testing.T) {
+	r, cfg, st, p := testRunner(t, "meteor-ok", config.Default().Satellites[3])
+	cfg.Community.ContributeComposites = true
+	cfg.Retention.DeleteMeteorAudio = true // deleted only after the upload
+	r.Prov = config.NewProvider(cfg)
+	bc := &blockingContributor{release: make(chan struct{}), seen: make(chan string, 1)}
+	r.Community = bc
+
+	done := make(chan struct{})
+	go func() { r.Run(context.Background(), p, cfg.Satellites[3]); close(done) }()
+	uploaded := <-bc.seen
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("Run blocked on the community upload")
+	}
+	if state, _ := passState(t, st, p.ID); state != store.StateDecoded {
+		t.Fatalf("state = %s", state)
+	}
+	if _, err := os.Stat(uploaded); err != nil {
+		t.Fatalf("recording must survive until the upload finishes: %v", err)
+	}
+	if filepath.Dir(uploaded) != cfg.Paths.AudioMeteor {
+		t.Errorf("upload should read the retained copy, got %s", uploaded)
+	}
+	close(bc.release)
+	r.WaitPushes()
+	if _, err := os.Stat(uploaded); !os.IsNotExist(err) {
+		t.Error("recording should be deleted after the upload when audio retention is off")
 	}
 }

@@ -7,14 +7,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/perhp/rnv3/internal/process"
 	"github.com/perhp/rnv3/internal/store"
 )
 
@@ -309,44 +308,13 @@ func (s *Server) handleDeleteCapture(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := s.prov.Get()
 	status := "success"
-	if err := s.deleteCapture(cfg.Paths.Images, cfg.Paths.Thumbs, int64(id)); err != nil {
+	if err := process.RemoveCapture(s.store, cfg.Paths.Images, cfg.Paths.Thumbs, int64(id)); err != nil {
 		slog.Error("cannot delete capture", "pass_id", id, "err", err)
 		status = "Could not delete capture: " + err.Error()
 	} else {
 		slog.Info("capture deleted from admin page", "pass_id", id)
 	}
 	http.Redirect(w, r, back+"&status="+url.QueryEscape(status), http.StatusSeeOther)
-}
-
-func (s *Server) deleteCapture(imagesDir, thumbsDir string, id int64) error {
-	p, err := s.store.PassByID(id)
-	if err != nil {
-		return err
-	}
-	if p == nil {
-		return os.ErrNotExist
-	}
-	images, err := s.store.ImagesForPass(id)
-	if err != nil {
-		return err
-	}
-	remove := func(path string) {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			slog.Warn("cannot delete file", "path", path, "err", err)
-		}
-	}
-	for _, im := range images {
-		if im.Path != "" {
-			remove(filepath.Join(imagesDir, filepath.Base(im.Path)))
-		}
-		if im.ThumbPath != "" {
-			remove(filepath.Join(thumbsDir, filepath.Base(im.ThumbPath)))
-		}
-	}
-	if p.FileBase != "" { // belt and braces for imported captures
-		remove(filepath.Join(thumbsDir, p.FileBase+"-website-thumbnail.jpg"))
-	}
-	return s.store.DeletePass(id)
 }
 
 func formInt(r *http.Request, key string) int {

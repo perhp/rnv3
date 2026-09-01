@@ -162,9 +162,12 @@ type Retention struct {
 }
 
 type Daily struct {
-	BestOfDayPush bool      `yaml:"best_of_day_push"`
-	Timelapse     Timelapse `yaml:"timelapse"`
-	Mosaic        Mosaic    `yaml:"mosaic"`
+	BestOfDayPush bool `yaml:"best_of_day_push"`
+	// PushTime is the local "HH:MM" at which the best-of-day summary goes
+	// out (RN2: 22:30 cron).
+	PushTime  string    `yaml:"push_time"`
+	Timelapse Timelapse `yaml:"timelapse"`
+	Mosaic    Mosaic    `yaml:"mosaic"`
 }
 
 type Timelapse struct {
@@ -340,6 +343,7 @@ func Default() *Config {
 			PruneImagesOlderThanDays: 0,
 		},
 		Daily: Daily{
+			PushTime:  "22:30",
 			Timelapse: Timelapse{Suffixes: []string{"-321_projected.jpg", "-221_projected.jpg"}},
 			Mosaic: Mosaic{Suffixes: []string{
 				"-321_projected.jpg", "-221_projected.jpg",
@@ -452,6 +456,28 @@ func (c *Config) Validate() error {
 	if q := c.Processing.Meteor.JPGQuality; q < 1 || q > 100 {
 		add("processing.meteor.jpg_quality %d out of range [1, 100]", q)
 	}
+	if _, _, err := ParseClock(c.Daily.PushTime); err != nil {
+		add("daily.push_time: %v", err)
+	}
+	n := c.Notifications
+	if n.Webhook.Enabled && n.Webhook.URL == "" {
+		add("notifications.webhook.url is required when the webhook is enabled")
+	}
+	if n.Discord.Enabled && n.Discord.NOAAWebhookURL == "" && n.Discord.MeteorWebhookURL == "" {
+		add("notifications.discord: at least one of noaa_webhook_url / meteor_webhook_url is required when enabled")
+	}
+	if n.Telegram.Enabled && (n.Telegram.BotToken == "" || n.Telegram.ChatID == "") {
+		add("notifications.telegram: bot_token and chat_id are required when enabled")
+	}
+	if n.Pushover.Enabled && (n.Pushover.APIToken == "" || n.Pushover.User == "") {
+		add("notifications.pushover: api_token and user are required when enabled")
+	}
+	if n.Email.Enabled && (n.Email.To == "" || n.Email.From == "" || n.Email.SMTPHost == "") {
+		add("notifications.email: to, from and smtp_host are required when enabled")
+	}
+	if c.Community.ContributeComposites && c.Community.URL == "" {
+		add("community.url is required when contribute_composites is enabled")
+	}
 	if c.Web.Listen == "" {
 		add("web.listen must not be empty")
 	}
@@ -474,6 +500,28 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("invalid configuration:\n  - %s", strings.Join(errs, "\n  - "))
 	}
 	return nil
+}
+
+// ParseClock parses a local "HH:MM" time of day into hour and minute.
+func ParseClock(s string) (hour, minute int, err error) {
+	if _, err := fmt.Sscanf(s, "%d:%d", &hour, &minute); err != nil || len(s) != 5 || s[2] != ':' {
+		return 0, 0, fmt.Errorf("%q is not a HH:MM time", s)
+	}
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return 0, 0, fmt.Errorf("%q is out of range", s)
+	}
+	return hour, minute, nil
+}
+
+// SatelliteByName finds a configured satellite; ok is false when the name is
+// not configured (imported history of a retired bird).
+func (c *Config) SatelliteByName(name string) (Satellite, bool) {
+	for _, s := range c.Satellites {
+		if s.Name == name {
+			return s, true
+		}
+	}
+	return Satellite{}, false
 }
 
 // EnabledSatellites returns the satellites with Enabled set.

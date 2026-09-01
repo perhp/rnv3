@@ -238,6 +238,18 @@ binary, unit file, udev rules, directories, SatDump.
   locally against a migrated fixture; the parity walkthrough against the live PHP panel happens
   at first Pi deploy, with real history.)
 - [ ] **M5 — Notifications, watchdog, retention, best-of-day.**
+  (Code complete 2026-09-01: `internal/notify` ports the kept push processors — webhook JSON
+  with RN2's keys (+ `max_snr`/`page_url`), Discord multipart per image on the NOAA/Meteor
+  webhook, Telegram `sendPhoto` with the caption on the first image (GIFs as documents),
+  Pushover with RN2's attachment preference and 2.5 MB resize, email over SMTP (STARTTLS/465,
+  MIME attachment — no msmtp/mpack); RN2's annotation text; quality gate exempting the webhook;
+  `Alert` for the watchdog and `DailySummary` for best-of-day; community CADU upload. Pushes run
+  in a goroutine off the capture runner. `internal/jobs` replaces the cron entries: hourly
+  watchdog (same five checks, RTL-SDR probed via sysfs, 24 h re-alert suppression persisted in
+  `data_dir/watchdog-state.json`), best-of-day at `daily.push_time` (22:30), retention pruning
+  (`prune_images_older_than_days` now actually deletes captures — files + rows — and old daily
+  artifacts; stale work dirs swept after 7 days). Real-channel delivery is verified at first Pi
+  deploy with the user's tokens.)
 - [ ] **M6 — Cutover**: install script hardening, disable old cron/at jobs, run rnv3 as the sole
   owner of the SDR for a week, then retire the old stack on the Pi.
 

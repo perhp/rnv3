@@ -3,6 +3,7 @@ package process
 import (
 	"context"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -20,10 +21,11 @@ type Pipeline struct {
 	TLEs *tle.Manager
 }
 
-// Process implements capture.PostProcessor. Returns the number of satellite
-// images produced (auxiliary artifacts like polar plots don't count toward
-// the decoded/failed decision).
-func (pl *Pipeline) Process(ctx context.Context, p store.Pass, sat config.Satellite, workDir, fileBase string, daylight bool) (int, error) {
+// Process implements capture.PostProcessor. Returns the satellite images
+// produced, as absolute paths in production order (auxiliary artifacts like
+// polar plots are not included: they don't count toward the decoded/failed
+// decision and are not pushed).
+func (pl *Pipeline) Process(ctx context.Context, p store.Pass, sat config.Satellite, workDir, fileBase string, daylight bool) ([]string, error) {
 	cfg := pl.Prov.Get()
 	northbound := p.Direction == "northbound"
 
@@ -38,10 +40,20 @@ func (pl *Pipeline) Process(ctx context.Context, p store.Pass, sat config.Satell
 			northbound, cfg.Processing.Meteor.FlipNorthbound, cfg.Processing.Meteor.JPGQuality)
 	}
 	if err != nil {
-		return len(produced), err
+		// A half-written product set must not become a capture: discard
+		// what was produced so nothing orphaned lingers in the gallery dirs.
+		for _, pr := range produced {
+			os.Remove(filepath.Join(cfg.Paths.Images, pr.ImageName))
+			os.Remove(filepath.Join(cfg.Paths.Thumbs, pr.ThumbName))
+		}
+		return nil, err
+	}
+	paths := make([]string, 0, len(produced))
+	for _, pr := range produced {
+		paths = append(paths, filepath.Join(cfg.Paths.Images, pr.ImageName))
 	}
 	if len(produced) == 0 {
-		return 0, nil // failed pass: no aux artifacts (RN2 parity)
+		return nil, nil // failed pass: no aux artifacts (RN2 parity)
 	}
 
 	for _, pr := range produced {
@@ -53,7 +65,7 @@ func (pl *Pipeline) Process(ctx context.Context, p store.Pass, sat config.Satell
 	pl.websiteThumbnail(cfg, p, sat, produced, fileBase, daylight)
 	pl.polarPlots(cfg, p, sat, fileBase)
 
-	return len(produced), nil
+	return paths, nil
 }
 
 // UpdateAggregates rebuilds the station-wide artifacts (sky map, daily

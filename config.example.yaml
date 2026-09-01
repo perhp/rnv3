@@ -116,10 +116,12 @@ retention:
   delete_noaa_audio: false
   delete_meteor_audio: false
   delete_audio_older_than_days: 3
-  prune_images_older_than_days: 0  # 0 = keep forever
+  prune_images_older_than_days: 0  # 0 = keep forever; otherwise captures older than this are
+                                   # deleted (images, thumbnails and their database rows)
 
 daily:
-  best_of_day_push: false
+  best_of_day_push: false        # one summary post per day with the best capture + mosaics/timelapses
+  push_time: "22:30"             # local time of the daily summary
   timelapse:
     enabled: false
     suffixes: ["-321_projected.jpg", "-221_projected.jpg"]

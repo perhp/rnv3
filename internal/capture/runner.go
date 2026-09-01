@@ -9,11 +9,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/perhp/rnv3/internal/cadu"
 	"github.com/perhp/rnv3/internal/config"
 	"github.com/perhp/rnv3/internal/livelog"
+	"github.com/perhp/rnv3/internal/notify"
 	"github.com/perhp/rnv3/internal/predict"
 	"github.com/perhp/rnv3/internal/store"
 )
@@ -22,8 +24,9 @@ import (
 // (implemented by process.Pipeline; InventoryProcessor is the test/fallback
 // implementation).
 type PostProcessor interface {
-	// Process returns how many satellite images were produced for the pass.
-	Process(ctx context.Context, p store.Pass, sat config.Satellite, workDir, fileBase string, daylight bool) (int, error)
+	// Process returns the satellite images produced for the pass (absolute
+	// paths); none means the pass failed.
+	Process(ctx context.Context, p store.Pass, sat config.Satellite, workDir, fileBase string, daylight bool) ([]string, error)
 	// UpdateAggregates rebuilds station-wide artifacts (sky map, daily
 	// mosaics/timelapses). Called after the pass reached its terminal DB
 	// state so the aggregates include it.
@@ -34,21 +37,35 @@ type PostProcessor interface {
 // them — drives the decoded/failed decision without the image pipeline.
 type InventoryProcessor struct{}
 
-func (InventoryProcessor) Process(_ context.Context, _ store.Pass, _ config.Satellite, workDir, _ string, _ bool) (int, error) {
-	count := 0
+func (InventoryProcessor) Process(_ context.Context, _ store.Pass, _ config.Satellite, workDir, _ string, _ bool) ([]string, error) {
+	var found []string
 	err := filepath.WalkDir(workDir, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if !d.IsDir() && strings.EqualFold(filepath.Ext(path), ".png") {
-			count++
+			found = append(found, path)
 		}
 		return nil
 	})
-	return count, err
+	return found, err
 }
 
 func (InventoryProcessor) UpdateAggregates(context.Context, time.Time) {}
+
+// PassNotifier receives decoded passes (notify.Notifier).
+type PassNotifier interface {
+	PassDecoded(ctx context.Context, ev notify.PassEvent)
+}
+
+// CADUContributor uploads Meteor recordings to the community composite
+// service (notify.Notifier).
+type CADUContributor interface {
+	ContributeCADU(ctx context.Context, path string) error
+}
+
+// notifyTimeout bounds one pass's pushes (many images × slow APIs).
+const notifyTimeout = 10 * time.Minute
 
 // watchdogSlack is added to the capture duration as the hard process
 // deadline; RN2 gave Meteor 900s of decode slack and NOAA none — rnv3 applies
@@ -69,10 +86,21 @@ type Runner struct {
 	// Live receives the decoder output as it happens, for the panel's
 	// terminal; nil disables.
 	Live *livelog.Hub
+	// Notify receives decoded passes; pushes run in the background so they
+	// never delay the next capture. nil disables.
+	Notify PassNotifier
+	// Community uploads CADU recordings when enabled in config. nil disables.
+	Community CADUContributor
+
+	pushes sync.WaitGroup
 	// Exec substitutes the process constructor in tests; nil means the real
 	// satdump binary from Paths.SatdumpBinary.
 	Exec func(ctx context.Context, name string, args ...string) *exec.Cmd
 }
+
+// WaitPushes blocks until background notifications have finished (shutdown,
+// tests).
+func (r *Runner) WaitPushes() { r.pushes.Wait() }
 
 // live publishes one line to the panel terminal (no-op without a hub).
 func (r *Runner) live(line string) {
@@ -138,17 +166,20 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 	daylight := sunEl > sat.SunMinElevation
 
 	// Recording + frame stats + audio retention per satellite type.
-	recording := r.handleRecording(cfg, p, sat, workDir, fileBase, log)
+	recording := r.handleRecording(ctx, cfg, p, sat, workDir, fileBase, log)
 
-	images := 0
-	if procN, err := r.Processor.Process(ctx, p, sat, workDir, fileBase, daylight); err != nil {
-		log.Error("post-processing failed", "err", err)
-	} else {
-		images = procN
+	images, procErr := r.Processor.Process(ctx, p, sat, workDir, fileBase, daylight)
+	if procErr != nil {
+		log.Error("post-processing failed", "err", procErr)
 	}
 
 	switch {
-	case images > 0:
+	case procErr != nil:
+		// A partial product set is not a capture: the pipeline has already
+		// discarded what it wrote, and nothing was registered.
+		r.fail(p.ID, withExitInfo("post-processing failed: "+procErr.Error(), runErr))
+		r.cleanupWorkDir(workDir, false)
+	case len(images) > 0:
 		maxSNR, avgSNR, ok := snr.Result()
 		res := store.CaptureResult{FileBase: fileBase, Daylight: daylight, Gain: sat.Gain}
 		if ok {
@@ -157,9 +188,15 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 		if err := r.St.CompleteCapture(p.ID, res); err != nil {
 			log.Error("cannot mark pass decoded", "err", err)
 		}
-		log.Info("pass decoded", "images", images, "daylight", daylight, "max_snr", maxSNR)
-		r.live(fmt.Sprintf("=== pass decoded: %d images", images))
+		log.Info("pass decoded", "images", len(images), "daylight", daylight, "max_snr", maxSNR)
+		r.live(fmt.Sprintf("=== pass decoded: %d images", len(images)))
 		r.cleanupWorkDir(workDir, true)
+		r.push(notify.PassEvent{
+			PassID: p.ID, Satellite: sat.Name, SatType: sat.Type, StartTS: p.StartTS, EndTS: p.EndTS,
+			MaxElevation: p.MaxElevation, Direction: directionLabel(p.Direction), Side: sideLabel(p.AzimuthAtMax),
+			SunElevation: sunEl, Gain: sat.Gain, Daylight: daylight, MaxSNR: res.MaxSNR, AvgSNR: res.AvgSNR,
+			Images: images,
+		})
 	case !recording:
 		r.fail(p.ID, withExitInfo("no recording produced", runErr))
 		r.cleanupWorkDir(workDir, false)
@@ -235,7 +272,7 @@ func (r *Runner) runSatdump(ctx context.Context, cfg *config.Config, workDir str
 
 // handleRecording verifies the raw recording exists, computes Meteor frame
 // stats, and applies audio retention. Returns whether a recording was found.
-func (r *Runner) handleRecording(cfg *config.Config, p store.Pass, sat config.Satellite, workDir, fileBase string, log *slog.Logger) bool {
+func (r *Runner) handleRecording(ctx context.Context, cfg *config.Config, p store.Pass, sat config.Satellite, workDir, fileBase string, log *slog.Logger) bool {
 	switch sat.Type {
 	case config.SatNOAAAPT:
 		wav := filepath.Join(workDir, "noaa_apt.wav")
@@ -265,10 +302,22 @@ func (r *Runner) handleRecording(cfg *config.Config, p store.Pass, sat config.Sa
 			log.Info("frame stats", "received", st.Received, "expected", st.Expected,
 				"loss_pct", fmt.Sprintf("%.1f", st.LossPct), "largest_gap", st.LargestGap)
 		}
-		if cfg.Retention.DeleteMeteorAudio {
+		// The community upload runs in the background (a slow endpoint must
+		// never hold up the next pass), so the recording is always moved out
+		// of the work dir first and only deleted once the upload is done.
+		contribute := cfg.Community.ContributeComposites && r.Community != nil
+		retained := filepath.Join(cfg.Paths.AudioMeteor, fileBase+".cadu")
+		switch {
+		case cfg.Retention.DeleteMeteorAudio && !contribute:
 			os.Remove(caduPath)
-		} else if err := moveFile(caduPath, filepath.Join(cfg.Paths.AudioMeteor, fileBase+".cadu")); err != nil {
-			log.Error("cannot retain cadu", "err", err)
+		default:
+			if err := moveFile(caduPath, retained); err != nil {
+				log.Error("cannot retain cadu", "err", err)
+				break
+			}
+			if contribute {
+				r.contribute(ctx, retained, cfg.Retention.DeleteMeteorAudio, log)
+			}
 		}
 		pruneOldFiles(cfg.Paths.AudioMeteor, cfg.Retention.AudioOlderThanDays, log)
 		return true
@@ -309,6 +358,60 @@ func (r *Runner) cleanupWorkDir(dir string, success bool) {
 	} else {
 		slog.Info("keeping work dir for debugging", "dir", dir)
 	}
+}
+
+// contributeTimeout bounds one community upload (recordings are large).
+const contributeTimeout = 10 * time.Minute
+
+// contribute uploads a retained recording in the background, deleting it
+// afterwards when audio retention is off. ctx is the scheduler's, so a
+// shutdown cancels the upload.
+func (r *Runner) contribute(ctx context.Context, path string, deleteAfter bool, log *slog.Logger) {
+	r.pushes.Add(1)
+	go func() {
+		defer r.pushes.Done()
+		uctx, cancel := context.WithTimeout(ctx, contributeTimeout)
+		defer cancel()
+		log.Info("contributing recording to community composites", "file", filepath.Base(path))
+		if err := r.Community.ContributeCADU(uctx, path); err != nil {
+			log.Warn("community upload failed", "err", err)
+		}
+		if deleteAfter {
+			os.Remove(path)
+		}
+	}()
+}
+
+// push hands a decoded pass to the notifier in the background.
+func (r *Runner) push(ev notify.PassEvent) {
+	if r.Notify == nil {
+		return
+	}
+	r.pushes.Add(1)
+	go func() {
+		defer r.pushes.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), notifyTimeout)
+		defer cancel()
+		r.Notify.PassDecoded(ctx, ev)
+	}()
+}
+
+func directionLabel(direction string) string {
+	switch direction {
+	case "northbound":
+		return "Northbound"
+	case "southbound":
+		return "Southbound"
+	}
+	return direction
+}
+
+// sideLabel: E when the pass culminates in the eastern half of the sky.
+func sideLabel(azimuthAtMax float64) string {
+	if azimuthAtMax >= 0 && azimuthAtMax <= 180 {
+		return "E"
+	}
+	return "W"
 }
 
 func (r *Runner) fail(id int64, reason string) {

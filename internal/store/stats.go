@@ -52,6 +52,44 @@ func (s *Store) DailyRecord(days int, now time.Time) ([]DayCount, error) {
 	return out, rows.Err()
 }
 
+// DecodedCountSince counts captures with start_ts > since (watchdog).
+func (s *Store) DecodedCountSince(since time.Time) (int, error) {
+	var n int
+	err := s.DB.QueryRow(`SELECT COUNT(*) FROM passes WHERE state = ? AND start_ts > ?`, StateDecoded, since.Unix()).Scan(&n)
+	return n, err
+}
+
+// AttemptedSince counts passes that ran (decoded or failed) with start_ts in
+// (since, now), and how many of them failed (watchdog).
+func (s *Store) AttemptedSince(since, now time.Time) (attempted, failed int, err error) {
+	if err = s.DB.QueryRow(`SELECT COUNT(*) FROM passes WHERE state IN (?, ?) AND start_ts > ? AND start_ts < ?`,
+		StateDecoded, StateFailed, since.Unix(), now.Unix()).Scan(&attempted); err != nil {
+		return
+	}
+	err = s.DB.QueryRow(`SELECT COUNT(*) FROM passes WHERE state = ? AND start_ts > ? AND start_ts < ?`,
+		StateFailed, since.Unix(), now.Unix()).Scan(&failed)
+	return
+}
+
+// DecodedIDsBefore lists captures with start_ts < cutoff, oldest first
+// (retention pruning).
+func (s *Store) DecodedIDsBefore(cutoff time.Time) ([]int64, error) {
+	rows, err := s.DB.Query(`SELECT id FROM passes WHERE state = ? AND start_ts < ? ORDER BY start_ts`, StateDecoded, cutoff.Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // SatelliteStats aggregates one satellite's capture history.
 type SatelliteStats struct {
 	Satellite    string
@@ -125,4 +163,13 @@ func (s *Store) StationTotals(now time.Time) (Totals, error) {
 		return t, err
 	}
 	return t, nil
+}
+
+// BestCaptureOfDay picks the strongest capture with start_ts in [from, to):
+// highest peak SNR, unknown SNR last, ties broken by max elevation (RN2
+// best_of_day.sh). Nil when there were none.
+func (s *Store) BestCaptureOfDay(from, to time.Time) (*SchedulePass, error) {
+	return s.querySchedulePass(`WHERE p.state = ? AND p.start_ts >= ? AND p.start_ts < ?
+		ORDER BY (p.max_snr IS NULL) ASC, p.max_snr DESC, p.max_elevation DESC LIMIT 1`,
+		StateDecoded, from.Unix(), to.Unix())
 }

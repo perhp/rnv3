@@ -79,8 +79,8 @@ func TestPipelineEndToEndNOAA(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 2 {
-		t.Errorf("produced %d images, want 2", n)
+	if len(n) != 2 {
+		t.Errorf("produced %d images, want 2", len(n))
 	}
 
 	images, err := st.ImagesForPass(passID)
@@ -139,8 +139,8 @@ func TestPipelineNoImagesShortCircuits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n != 0 {
-		t.Errorf("empty work dir produced %d images", n)
+	if len(n) != 0 {
+		t.Errorf("empty work dir produced %d images", len(n))
 	}
 	if _, err := os.Stat(filepath.Join(cfg.Paths.Images, SkymapFilename)); err == nil {
 		t.Error("Process must not produce aggregate artifacts")

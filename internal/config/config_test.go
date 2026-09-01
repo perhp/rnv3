@@ -101,3 +101,28 @@ func TestAdminLockWithoutHashWarnsButLoads(t *testing.T) {
 		t.Errorf("unexpected warnings: %v", w)
 	}
 }
+
+func TestNotificationValidation(t *testing.T) {
+	cfg := Default()
+	cfg.Notifications.Telegram.Enabled = true // no token/chat
+	cfg.Notifications.Email = Email{Enabled: true, To: "a@b"}
+	cfg.Daily.PushTime = "25:00"
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation errors")
+	}
+	for _, want := range []string{"telegram", "email", "push_time"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+	cfg = Default()
+	cfg.Notifications.Telegram = Telegram{Enabled: true, BotToken: "t", ChatID: "c"}
+	cfg.Daily.PushTime = "07:05"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid channels rejected: %v", err)
+	}
+	if h, m, _ := ParseClock("07:05"); h != 7 || m != 5 {
+		t.Errorf("ParseClock = %d:%d", h, m)
+	}
+}

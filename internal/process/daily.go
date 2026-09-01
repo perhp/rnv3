@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/perhp/rnv3/internal/config"
@@ -24,6 +25,10 @@ func BuildDailyArtifacts(cfg *config.Config, st *store.Store, day time.Time) err
 	if !cfg.Daily.Timelapse.Enabled && !cfg.Daily.Mosaic.Enabled {
 		return nil
 	}
+	// The post-capture rebuild and the best-of-day fallback can coincide;
+	// the writers share temp names and replace outputs, so one at a time.
+	dailyMu.Lock()
+	defer dailyMu.Unlock()
 	dayStart := time.Date(day.Year(), day.Month(), day.Day(), 0, 0, 0, 0, day.Location())
 	// Next calendar date, not +24h: DST transitions make local days 23 or 25
 	// hours long.
@@ -95,6 +100,9 @@ func variantName(suffix string) string {
 	}
 	return v
 }
+
+// dailyMu serializes BuildDailyArtifacts (post-capture rebuild vs best-of-day fallback).
+var dailyMu sync.Mutex
 
 // timelapseWidth matches RN2's `-resize 800x`.
 const timelapseWidth = 800

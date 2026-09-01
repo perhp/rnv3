@@ -20,7 +20,9 @@ import (
 
 	"github.com/perhp/rnv3/internal/capture"
 	"github.com/perhp/rnv3/internal/config"
+	"github.com/perhp/rnv3/internal/jobs"
 	"github.com/perhp/rnv3/internal/livelog"
+	"github.com/perhp/rnv3/internal/notify"
 	"github.com/perhp/rnv3/internal/process"
 	"github.com/perhp/rnv3/internal/satdumpcfg"
 	"github.com/perhp/rnv3/internal/sched"
@@ -96,11 +98,17 @@ func run(configPath string, checkOnly bool) error {
 	tleMgr := tle.NewManager(cfg.Paths.DataDir)
 	pipeline := &process.Pipeline{Prov: prov, St: st, TLEs: tleMgr}
 	live := livelog.New() // decoder output → panel terminal
+	notifier := notify.New(prov)
+	captureRunner := &capture.Runner{Prov: prov, St: st, Processor: pipeline, Live: live, Notify: notifier, Community: notifier}
 	// Note: dry_run selects the runner at startup; toggling it requires a restart.
-	var runner sched.CaptureRunner = &capture.Runner{Prov: prov, St: st, Processor: pipeline, Live: live}
+	var runner sched.CaptureRunner = captureRunner
 	if cfg.Scheduling.DryRun {
 		runner = &sched.NotImplementedRunner{St: st, DryRun: true}
 	}
+	housekeeping := &jobs.Jobs{Prov: prov, St: st, Notify: notifier, StateDir: cfg.Paths.DataDir}
+	jobsCtx, cancelJobs := context.WithCancel(context.Background())
+	defer cancelJobs()
+	go housekeeping.Run(jobsCtx)
 	scheduler := sched.New(prov, st, tleMgr, runner)
 	schedCtx, cancelSched := context.WithCancel(context.Background())
 	defer cancelSched()
@@ -158,10 +166,18 @@ func run(configPath string, checkOnly bool) error {
 			// reach a terminal DB state (SatDump kill + drain can take up to
 			// killGrace); fits inside systemd's default TimeoutStopSec=90.
 			cancelSched()
+			cancelJobs()
 			select {
 			case <-schedDone:
 			case <-time.After(85 * time.Second):
 				slog.Error("scheduler did not stop in time; passes may be left mid-state")
+			}
+			// Let in-flight pushes finish briefly; they are best-effort.
+			pushesDone := make(chan struct{})
+			go func() { captureRunner.WaitPushes(); close(pushesDone) }()
+			select {
+			case <-pushesDone:
+			case <-time.After(3 * time.Second):
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
