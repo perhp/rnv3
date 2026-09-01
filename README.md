@@ -193,6 +193,8 @@ and alerts through the same channels, at most once a day per problem.
 Run the setup tool again and choose **Reconfigure** — it starts from the current settings and
 applies the change (reloading the service, or restarting it for the few settings that need
 that). This is the easiest way to enable a notification channel or change satellites later.
+If you rebuilt the tool from a newer rnv3, Reconfigure also upgrades the daemon on the Pi
+before applying the config.
 
 Or edit the file directly on the Pi:
 

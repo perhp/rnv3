@@ -197,6 +197,21 @@ func run(host, user, answersPath, saveAnswers, payloadDir string) error {
 	// ---- apply --------------------------------------------------------------
 	switch mode {
 	case setup.ModeReconfigure:
+		// A newer tool carries a newer daemon: the config it writes may use
+		// settings the installed binary does not know, so upgrade first.
+		if probe.RNV3Version != "rnv3 "+version {
+			p.Say("==> Installed %q, this tool carries rnv3 %s — upgrading", probe.RNV3Version, version)
+			if err := in.ShipPayload(); err != nil {
+				return err
+			}
+			if err := in.WriteConfig(yamlText); err != nil {
+				return err
+			}
+			if err := in.RunInstall(false); err != nil { // restarts the service on the new binary
+				return err
+			}
+			break
+		}
 		if err := in.WriteConfig(yamlText); err != nil {
 			return err
 		}
