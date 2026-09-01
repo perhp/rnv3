@@ -2,7 +2,7 @@
 #
 # Retire raspberry-noaa-v2 on this station and hand the SDR to rnv3.
 # Run as the station user after deploy/install.sh has installed rnv3 and
-# you have validated it side by side (see deploy/README.md).
+# you have validated it side by side (see README.md, "Migrate from raspberry-noaa-v2").
 #
 #   ./deploy/cutover.sh [--dry-run] [--kill] [--rn2-home ~/raspberry-noaa-v2]
 #   ./deploy/cutover.sh --revert

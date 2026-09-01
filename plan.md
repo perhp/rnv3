@@ -257,7 +257,7 @@ binary, unit file, udev rules, directories, SatDump.
   blacklists, udev rules, plugdev, /var/ramfs tmpfs, both binaries, config, dirs, hardened unit;
   `deploy/cutover.sh` (with `--dry-run`/`--revert`) removes RN2's cron entries and `at` jobs,
   disables nginx/php-fpm, imports panel.db, moves the panel to :80 and starts rnv3;
-  `deploy/deploy.ps1` ships rnv3 + rnv3-migrate; `deploy/README.md` is the runbook: side-by-side
+  `deploy/deploy.ps1` ships rnv3 + rnv3-migrate; the README is the runbook: side-by-side
   in dry-run on :8080 → real passes with RN2 paused → cutover → a week solo → retire RN2.
   **Remaining: the on-Pi run itself** — first deploy, the M1–M5 validations against the live
   station, then cutover.)

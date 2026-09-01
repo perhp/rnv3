@@ -10,6 +10,7 @@ that does everything itself:
 - produces the enhancements, thumbnails, polar plots, sky-quality map, daily mosaics and timelapses
 - serves the web panel (live terminal, schedule, gallery, stats, admin) on port 80
 - pushes captures to a webhook, Discord, Telegram, Pushover or email
+- streams every pass, image, schedule and health sample to your own website as events
 - watches its own health, prunes old captures, keeps its TLEs fresh
 
 It runs on 64-bit Raspberry Pi OS / Debian 13 (Trixie) on a Pi 3/4/5, and you set it up from
@@ -24,9 +25,12 @@ your PC without ever opening a terminal on the Pi.
 3. [Migrate from raspberry-noaa-v2](#3-migrate-from-raspberry-noaa-v2)
 4. [Using the station](#4-using-the-station)
 5. [Changing settings](#5-changing-settings)
-6. [Where things live on the Pi](#6-where-things-live-on-the-pi)
-7. [Troubleshooting](#7-troubleshooting)
-8. [Developing rnv3](#8-developing-rnv3)
+6. [Upgrading rnv3](#6-upgrading-rnv3)
+7. [Publishing to your own website](#7-publishing-to-your-own-website)
+8. [Where things live on the Pi](#8-where-things-live-on-the-pi)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Developing rnv3](#10-developing-rnv3)
+11. [Appendix: what the installer sets up](#11-appendix-what-the-installer-sets-up)
 
 ---
 
@@ -89,8 +93,8 @@ accept the default shown in `[brackets]`.
 5. **SDR** — pick your receiver type.
 6. **Satellites** — toggle which of NOAA 15/18/19 and METEOR-M2 3/4 to capture.
 7. **Panel admin** — whether the admin pages need a login, and the password (stored hashed).
-8. **Optional sections** — notifications, daily summary & retention, panel extras & HTTPS,
-   advanced SDR/processing. Answer `n` to skip any of them; the defaults are RN2's.
+8. **Optional sections** — notifications & event feed, daily summary & retention, panel extras
+   & HTTPS, advanced SDR/processing. Answer `n` to skip any of them; the defaults are RN2's.
 9. **Apply** — the tool uploads everything, runs the installer on the Pi and streams its output.
 
 > **First install on a bare Pi takes a while.** If SatDump is not installed yet it is built from
@@ -136,9 +140,22 @@ runs of the setup tool: first side by side, then cut over.
 In this mode rnv3 runs with `dry_run: true` (it plans passes but never touches the SDR — RN2
 still owns it) and its panel is on **port 8080** because nginx has port 80.
 
-Now compare: `http://raspinoaa:8080/passes` against `http://raspinoaa/passes`. The schedules
-should agree to within seconds. Browse the imported gallery, stats and sky map. Live with it
-for a day or two.
+**Validate before cutting over:**
+
+- `http://raspinoaa:8080/passes` against `http://raspinoaa/passes` — the schedules should agree
+  to within seconds (SGP4 vs ephem differ that much). Passes rnv3 skips carry the reason in the
+  status lamp's tooltip.
+- Browse the imported gallery, a capture's enhancements, stats, sky map and admin pages against
+  the PHP panel. The import is idempotent; re-run it any time with
+  `sudo systemctl stop rnv3 && rnv3-migrate -old ~/raspberry-noaa-v2/db/panel.db -config /etc/rnv3/config.yaml && sudo systemctl start rnv3`.
+- Optionally let rnv3 take a real NOAA pass and a real Meteor pass while RN2 is paused: comment
+  out the `schedule passes` lines in `crontab -e`, run `atq | awk '{print $1}' | xargs -r atrm`,
+  set `scheduling.dry_run: false`, `sudo systemctl restart rnv3`. Check `journalctl -u rnv3`
+  (satdump arguments, SNR, frame stats) and the capture page (enhancement set and flips against
+  an RN2 capture of the same satellite). **Never let both schedule captures at once**: to hand
+  the SDR back to RN2, set `dry_run: true` and restart rnv3 *before* restoring the cron lines.
+
+Live with it for a day or two.
 
 ### Run 2 — cut over
 
@@ -155,8 +172,27 @@ for a day or two.
 RN2's checkout, database and images are left untouched on the Pi. Once rnv3 has taken a few
 passes to your satisfaction, delete `~/raspberry-noaa-v2`.
 
-(If you prefer doing this by hand over SSH, [deploy/README.md](deploy/README.md) walks
-through the same steps with `install.sh` and `cutover.sh`.)
+### Doing it by hand over SSH
+
+The setup tool is a front end for two scripts you can also run yourself:
+
+```powershell
+.\deploy\deploy.ps1 -PiHost raspinoaa -PiUser pi -InstallArgs "--no-start"   # build, copy, install
+```
+
+then on the Pi edit `/etc/rnv3/config.yaml` (station and SDR from RN2's `settings.yml`,
+`scheduling.dry_run: true`, `web.listen: ":8080"`), `sudo systemctl start rnv3`, validate as
+above, and finally:
+
+```bash
+cd /tmp/rnv3-deploy
+./deploy/cutover.sh --dry-run   # shows what would change
+./deploy/cutover.sh             # --kill terminates a running RN2 capture instead of waiting (up to 45 min)
+./deploy/cutover.sh --revert    # brings nginx back and stops rnv3; RN2's install_and_upgrade.sh restores its cron/at jobs
+```
+
+`install.sh` flags: `--skip-builds` (never compile SatDump/rtl-sdr), `--no-start` (install but
+leave the service stopped).
 
 ---
 
@@ -178,9 +214,7 @@ n8n, Node-RED), Discord, Telegram, Pushover and email. The *quality gate* skips 
 *best-of-day* summary with mosaics and timelapses is optional.
 
 **Event feed.** Everything the station does can be pushed to your own website or backend as
-webhook events — each decoded pass with its image files, failed passes, the upcoming schedule,
-a health sample every five minutes, watchdog alerts — with a bearer secret you choose. The
-format is in [docs/webhooks.md](docs/webhooks.md); `rnv3 -publish-test` checks a receiver.
+webhook events — see [section 7](#7-publishing-to-your-own-website).
 
 **Watchdog.** Once an hour rnv3 checks that captures are still happening, passes are not all
 failing, disk is not full, passes are scheduled and (for RTL-SDR) the dongle is still on USB —
@@ -193,8 +227,6 @@ and alerts through the same channels, at most once a day per problem.
 Run the setup tool again and choose **Reconfigure** — it starts from the current settings and
 applies the change (reloading the service, or restarting it for the few settings that need
 that). This is the easiest way to enable a notification channel or change satellites later.
-If you rebuilt the tool from a newer rnv3, Reconfigure also upgrades the daemon on the Pi
-before applying the config.
 
 Or edit the file directly on the Pi:
 
@@ -204,26 +236,80 @@ sudo systemctl reload rnv3        # applies everything except the four below
 ```
 
 `web.listen`, `web.tls`, `paths.data_dir` and `scheduling.dry_run` need
-`sudo systemctl restart rnv3` instead. Every key is documented in
+`sudo systemctl restart rnv3` instead (the daemon logs a warning and keeps the old value if a
+reload changes one of them). Every key is documented in
 [config.example.yaml](config.example.yaml).
 
 Handy commands on the Pi:
 
 ```bash
-journalctl -u rnv3 -f                   # live log
-systemctl status rnv3                   # is it running?
+journalctl -u rnv3 -f                       # live log
+systemctl status rnv3                       # is it running?
 rnv3 -config /etc/rnv3/config.yaml -check   # validate a config edit
-rnv3 -hash-password                     # make a hash for web.admin.password_hash
+rnv3 -hash-password                         # make a hash for web.admin.password_hash
+rnv3 -config /etc/rnv3/config.yaml -publish-test   # ping every event-feed receiver
 ```
 
 ---
 
-## 6. Where things live on the Pi
+## 6. Upgrading rnv3
+
+```powershell
+git pull
+.\deploy\release.ps1
+.\dist\rnv3-setup.exe      # → Reconfigure
+```
+
+Reconfigure notices that the tool carries a newer daemon than the Pi runs, ships it, reruns the
+installer and restarts the service before applying your (unchanged) settings. The installer is
+idempotent: binaries are replaced, your config and data are kept, the SatDump/rtl-sdr builds are
+skipped when already present.
+
+Developers with SSH keys on the Pi can skip the tool:
+`.\deploy\deploy.ps1 -PiHost raspinoaa -PiUser pi -InstallArgs "--skip-builds"`.
+
+---
+
+## 7. Publishing to your own website
+
+rnv3 can send everything that happens at the station to one or more HTTP receivers — every
+decoded pass with its image files, failed passes, deletions, the upcoming schedule, a health
+sample every five minutes and watchdog alerts. rnv3 knows nothing about the backend: the
+receiver stores the events wherever it likes. The full event format is in
+[docs/webhooks.md](docs/webhooks.md).
+
+1. Build a receiver that accepts `POST`s with `Authorization: Bearer <secret>` and answers
+   `2xx`. ([permi](https://github.com/perhp/permi), a Next.js site on Supabase, has one at
+   `app/api/station/webhook/route.ts` you can copy from.)
+2. In the setup tool → Reconfigure → *Configure notifications* → *Send station events to a
+   webhook receiver*: the receiver's URL and the secret. Or in `config.yaml`:
+
+   ```yaml
+   publish:
+     backfill_days: 31
+     endpoints:
+       - name: my-site
+         url: https://example.org/api/station/webhook
+         token: change-me
+         images: true
+   ```
+
+3. `rnv3 -config /etc/rnv3/config.yaml -publish-test` sends a test event and prints the
+   receiver's answer.
+
+Pass events are queued on the Pi and retried with backoff (up to a week) if the receiver is
+down, always in order; on every start rnv3 also re-sends decoded passes newer than
+`backfill_days` that a receiver has not acknowledged. Receivers should therefore be
+idempotent on the pass id and image name.
+
+---
+
+## 8. Where things live on the Pi
 
 | Path | Content |
 |---|---|
 | `/etc/rnv3/config.yaml` | the one configuration file (0600, holds your notification tokens) |
-| `/var/lib/rnv3/` | database (`rnv3.db`), cached TLEs, watchdog state |
+| `/var/lib/rnv3/` | database (`rnv3.db`, including the event-feed outbox), cached TLEs, watchdog state |
 | `/srv/images/` | captures (`<SAT>-<date>-<time>-<enhancement>.jpg`), polar plots, sky map, mosaics, timelapses |
 | `/srv/images/thumb/` | thumbnails |
 | `/srv/audio/noaa`, `/srv/audio/meteor` | retained recordings (wav / cadu), pruned after `delete_audio_older_than_days` |
@@ -231,10 +317,11 @@ rnv3 -hash-password                     # make a hash for web.admin.password_has
 | `/var/ramfs` | tmpfs used to buffer captures in RAM when enough is free |
 | `/usr/local/bin/rnv3`, `rnv3-migrate` | the binaries |
 | `/usr/share/satdump/satdump_cfg.json` | SatDump's config — **generated by rnv3** from your enhancement settings; don't edit by hand |
+| `/tmp/rnv3-deploy/` | where the setup tool / deploy script stage files and scripts (`install.sh`, `cutover.sh`) |
 
 ---
 
-## 7. Troubleshooting
+## 9. Troubleshooting
 
 **"no successfully decoded capture" alerts / nothing gets captured**
 `journalctl -u rnv3 -n 200`. Look for the `satdump starting` line for the pass and what
@@ -257,6 +344,13 @@ Another web server is running (nginx from RN2?). Either cut over properly (secti
 Set a new hash: `rnv3 -hash-password`, paste it into `web.admin.password_hash`, reload. Or set
 `web.admin.enabled: false` for a LAN-only station.
 
+**Events never reach my website**
+`rnv3 -config /etc/rnv3/config.yaml -publish-test` says why (`HTTP 401` = secret mismatch,
+`404` = wrong URL, `500` = receiver misconfigured). `journalctl -u rnv3 | grep -i publish`
+shows queued deliveries failing and their retry interval;
+`sqlite3 /var/lib/rnv3/rnv3.db "select event,attempts,count(*) from outbox group by 1,2"`
+shows the queue.
+
 **Setup tool: "host key mismatch"**
 The Pi was reinstalled and has a new SSH key. Delete its line from
 `%APPDATA%\rnv3\known_hosts` and run again.
@@ -266,7 +360,7 @@ It isn't hung, it's compiling; a Pi 4 needs an hour or more. Progress lines keep
 
 ---
 
-## 8. Developing rnv3
+## 10. Developing rnv3
 
 ```
 go build ./...
@@ -276,7 +370,7 @@ go run ./cmd/rnv3 -config config.example.yaml
 
 Everything except SatDump itself runs and is tested on Windows/macOS/Linux; the capture path
 is tested against a fake SatDump, the web panel against a seeded database, the setup tool
-against an in-process SSH server.
+against an in-process SSH server, the event feed against an in-process receiver.
 
 | Directory | Purpose |
 |---|---|
@@ -287,14 +381,31 @@ against an in-process SSH server.
 | `internal/tle`, `predict`, `sched` | TLE fetch/validation, SGP4, pass planning and the scheduler loop |
 | `internal/capture`, `cadu` | SatDump runner, per-SDR flags, SNR/frame statistics |
 | `internal/process`, `satdumpcfg` | image rules, thumbnails, polar/sky-map SVG, mosaics/timelapses, SatDump config generator |
-| `internal/store` | SQLite (pure Go), migrations, queries |
+| `internal/store` | SQLite (pure Go), migrations, queries, event outbox |
 | `internal/web`, `livelog` | panel, JSON API, SSE terminal |
 | `internal/notify`, `jobs` | push channels, watchdog, best-of-day, retention |
+| `internal/publish`, `hostinfo` | event webhooks and the host readings they carry |
 | `internal/setup` | SSH client, probe, wizard, installer orchestration |
 | `deploy/` | `install.sh`, `cutover.sh`, systemd unit, `release.ps1`, `deploy.ps1` (dev fast path) |
-
-`.\deploy\deploy.ps1 -PiHost raspinoaa -PiUser pi` builds and installs straight onto a Pi you
-already have SSH access to — the developer's shortcut around the setup tool.
+| `docs/` | the event webhook contract |
 
 [plan.md](plan.md) holds the investigation of RN2, the design decisions and the milestone
 history.
+
+---
+
+## 11. Appendix: what the installer sets up
+
+`deploy/install.sh` runs on the Pi (as the station user, sudo where needed) and is idempotent.
+
+| Piece | Detail |
+|---|---|
+| apt | SatDump/rtl-sdr build dependencies, airspy/hackrf tools |
+| osmocom rtl-sdr | built with `DETACH_KERNEL_DRIVER=ON` when `/usr/local/bin/rtl_sdr` is missing (needed for RTL-SDR V4); udev rules |
+| kernel blacklists | `dvb_usb_rtl28xxu`/`rtl2832`/`rtl2830`, `airspy`, `msi001`/`msi2500` |
+| SatDump | 1.2.2 built from source when `/usr/bin/satdump` is missing (`-j2`, an hour+ on a Pi 4); `/usr/share/satdump` owned by the service user so rnv3 can regenerate `satdump_cfg.json` |
+| ramfs | `/var/ramfs` tmpfs 1000M in fstab |
+| binaries | `/usr/local/bin/rnv3`, `/usr/local/bin/rnv3-migrate` |
+| config | `/etc/rnv3/config.yaml`, 0600, owned by the service user (created from the example when absent, never overwritten) |
+| dirs | `/var/lib/rnv3`, `/srv/images{,/thumb}`, `/srv/audio/{noaa,meteor}`, `/srv/work` |
+| service | `rnv3.service`: station user + `plugdev`, `CAP_NET_BIND_SERVICE` for port 80, config check before start, 95 s stop timeout so an in-flight capture can finish |
