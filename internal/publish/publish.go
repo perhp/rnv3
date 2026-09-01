@@ -348,16 +348,14 @@ func (p *Publisher) Backfill() {
 // ---- worker --------------------------------------------------------------------
 
 // Run drives the outbox and the periodic station.stats until ctx ends.
+// The two run independently: a long backfill of images must never delay
+// the health samples (a receiver's "online" badge hangs off them).
 func (p *Publisher) Run(ctx context.Context) {
+	go p.statsLoop(ctx)
 	p.Backfill()
 	p.drain(ctx)
 	ticker := time.NewTicker(workerInterval)
 	defer ticker.Stop()
-	stats := time.NewTicker(statsInterval)
-	defer stats.Stop()
-	if p.Enabled() {
-		p.SendStats(ctx)
-	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -366,7 +364,22 @@ func (p *Publisher) Run(ctx context.Context) {
 			p.drain(ctx)
 		case <-ticker.C:
 			p.drain(ctx)
-		case <-stats.C:
+		}
+	}
+}
+
+// statsLoop sends station.stats on start and every statsInterval.
+func (p *Publisher) statsLoop(ctx context.Context) {
+	if p.Enabled() {
+		p.SendStats(ctx)
+	}
+	ticker := time.NewTicker(statsInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
 			p.SendStats(ctx)
 		}
 	}
@@ -403,6 +416,13 @@ func (p *Publisher) drain(ctx context.Context) {
 }
 
 func (p *Publisher) drainEndpoint(ctx context.Context, cfg *config.Config, ep config.PublishEndpoint) {
+	delivered := 0
+	defer func() {
+		if delivered > 0 {
+			left, _ := p.St.OutboxCount(ep.Name)
+			p.Log.Info("webhook deliveries sent", "endpoint", ep.Name, "sent", delivered, "queued", left)
+		}
+	}()
 	for {
 		// The queue is strictly ordered: while the oldest entry is waiting
 		// out its backoff, nothing behind it may be sent (a pass's images
@@ -431,6 +451,7 @@ func (p *Publisher) drainEndpoint(ctx context.Context, cfg *config.Config, ep co
 				return // keep order: nothing later for this endpoint until this one succeeds
 			}
 			p.St.DeleteOutbox(e.ID)
+			delivered++
 		}
 		if len(due) < batchSize {
 			return
