@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhancement reference &middot; Raspberry NOAA V3</title>
+  <link rel="stylesheet" type="text/css" href="/assets/css/rn2.css">
+  <link rel="shortcut icon" href="/assets/web_img/favicon.ico" type="image/x-icon"/>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-inner">
+      <div class="station-plate">
+        <a href="/passes">
+          <div class="station-name">Raspberry NOAA V3</div>
+          <div class="station-sub">APT / LRPT Ground Station &middot; 137 MHz</div>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap reference">
+    <h1>Enhancement reference</h1>
+    <p class="reference-sub">Enhancement curves produced by the SatDump decoder (WXtoImg-compatible LUTs)</p>
+
+    <dl>
+      <dt>ZA</dt>
+      <dd>NOAA general purpose meteorological IR enhancement. Increases contrast by saturating the very low and very high temperature regions where there is typically very little information. Temperature normalised.</dd>
+
+      <dt>MB</dt>
+      <dd>NOAA cold cloud top enhancement. Useful for showing where the strongest rainfall is occurring in thunderstorms. Temperature normalised.</dd>
+
+      <dt>MD</dt>
+      <dd>A modification of the popular, general use MB enhancement scheme. Intended for warm season use, it provides improved enhancement within the gray "step wedges" that depict "warm top" convection, and better delineation of warm low clouds (30&deg;C to 7&deg;C). The middle cloud range is somewhat broader than MB and enhancement of details is minimised; otherwise it is the same as MB. Temperature normalised.</dd>
+
+      <dt>BD</dt>
+      <dd>NOAA hurricane enhancement. Highlights certain temperatures in the eye and eye wall of the storm system which are known to be related to the intensity of the hurricane. Temperature normalised.</dd>
+
+      <dt>CC</dt>
+      <dd>NOAA CC enhancement curve. Temperature normalised.</dd>
+
+      <dt>HE</dt>
+      <dd>Used principally by weather offices in the western United States. Provides good enhancement of a wide variety of cloud types, but is somewhat complex and may be difficult to use at first. It enhances low and middle level clouds common along the Pacific Coast of North America in two separate gray shade ranges. The freezing level is easily determined, an advantage for aviation users concerned with icing. Step wedge regions display very cold infrared cloud top temperatures associated with thunderstorms and frontal systems in 5 degree increments down to -60&deg;C, with two additional "repeat gray" segments for colder cloud tops. Temperature normalised.</dd>
+
+      <dt>HF</dt>
+      <dd>The most current of the "H" series of enhancements, used principally by weather offices in the western United States. Provides good enhancement of low and middle level clouds common along the Pacific Coast of North America. Step wedge regions display very cold infrared cloud top temperatures associated with thunderstorms and frontal systems in 5 degree increments down to -60&deg;C, with two additional "repeat gray" segments for colder cloud tops. Temperature normalised.</dd>
+
+      <dt>JF</dt>
+      <dd>A hybrid enhancement scheme used to highlight both sea surface temperatures and cold cloud tops associated with thunderstorms and other weather systems. Somewhat simpler to interpret than the later JJ enhancement. The coldest portion (below -33&deg;C) is nearly identical to the general-use MB enhancement. Maximum enhancement is provided at the warm end (25&deg;C to 10&deg;C) to depict sea surface temperatures and warm low clouds in tropical and subtropical areas. Temperature normalised.</dd>
+
+      <dt>JJ</dt>
+      <dd>Highlights both sea surface temperatures and cold cloud tops associated with thunderstorms and other weather systems. Maximum enhancement is provided at the warm end (23&deg;C to 0&deg;C) to depict sea surface temperatures and low clouds. The freezing level break point is important for aviation users interested in icing conditions. Multiple steep ramp enhancement ranges provide considerable detail within cold cloud tops such as thunderstorms, but it is difficult to determine actual temperatures with any accuracy. Temperature normalised.</dd>
+
+      <dt>LC</dt>
+      <dd>Used on images from the 3.9 micron shortwave infrared channel (CH2) of GOES. Provides maximum enhancement in the temperature range where fog and low clouds typically occur (36&deg;C to -9&deg;C). Another enhanced thermal range is -10&deg;C to -29&deg;C, the region of precipitation generation in mid latitude weather systems. Since CH2 is sensitive to "hot spots," a steep reverse ramp at the warm end (68&deg;C to 50&deg;C) shows any observable fires as white. No enhancement at the very cold end (-30&deg;C to -67&deg;C) due to instrument noise at these temperatures. Temperature normalised.</dd>
+
+      <dt>TA</dt>
+      <dd>NOAA TA enhancement curve. Temperature normalised.</dd>
+
+      <dt>WV</dt>
+      <dd>The modified NOAA WV curve, used for the 6.7 micron water vapor channel (CH3) on GOES. The only temperature range enhanced is between -5&deg;C and -90&deg;C. Temperatures colder than -90&deg;C are shown as white, warmer than -5&deg;C as black. Temperature normalised. (See also WV-old.)</dd>
+
+      <dt>NO</dt>
+      <dd>NOAA colour IR contrast enhancement. Greatly increases contrast in the darker land/sea regions and colours the cold cloud tops. Allows fine detail in land and sea to be seen and provides a very readable indication of cloud top temperatures. Temperature normalised.</dd>
+
+      <dt>MCIR</dt>
+      <dd>Colours the NOAA sensor 4 IR image using a map to colour the sea blue and land green. High clouds appear white, lower clouds gray or land/sea coloured. Clouds generally appear lighter, but distinguishing between land/sea and low cloud may be difficult. Darker colours indicate warmer regions.</dd>
+
+      <dt>MSA[:SeaToLand[:LandToCloud[:ColdRegion]]]</dt>
+      <dd>Multispectral analysis. Uses a NOAA channel 2-4 image and determines which regions are most likely to be cloud, land, or sea based on an analysis of the two images, producing a vivid false-coloured image. Takes up to three options separated by colons: sea-to-land adjustment (default 50, range 0&ndash;100 &mdash; decrease if land appears blue, increase if water appears green); land-to-cloud adjustment (default 50, range 0&ndash;100 &mdash; decrease if cloud appears green, increase if land appears gray or white); and 0 for warm or summertime analysis, or 1 when there are large cold regions. Perfect colouring is difficult to obtain, especially with low illumination angles. Does not use a palette and is not temperature normalised.</dd>
+
+      <dt>MSA-precip[:SeaToLand[:LandToCloud[:ColdRegion]]]</dt>
+      <dd>Same as MSA multispectral analysis, but high cold cloud tops are coloured the same as the NO enhancement to give an approximate indication of the probability and intensity of precipitation.</dd>
+
+      <dt>HVC</dt>
+      <dd>Creates a false colour image from NOAA APT images based on temperature using the HVC colour model. Uses the temperature derived from the sensor 4 image to select the hue, and the brightness from the histogram-equalised other image to select the value and chroma. The HVC colour model attempts to ensure that different colours at the same value appear equally bright, and that the spacing between colours representing each degree appears similar. Bright areas are completely unsaturated in this model. The palette can be changed with the -P option.</dd>
+
+      <dt>HVCT</dt>
+      <dd>Similar to HVC, but with blue water and with colours more indicative of land temperatures. The palette can be changed with the -P option.</dd>
+
+      <dt>therm</dt>
+      <dd>Produces a false colour image from NOAA APT images based on temperature. Provides a good way of visualising cloud temperatures. The palette can be changed with the -P option.</dd>
+
+      <dt>sea</dt>
+      <dd>Creates a false colour image from NOAA APT images based on sea surface temperature, derived from just the sensor 4 image. Land appears black and cold high cloud will also appear black. The sea surface temperature may be incorrect due to the presence of low cloud, thin or small clouds in the pixel evaluated, or noise in the signal. The palette can be changed with the -P option.</dd>
+    </dl>
+  </main>
+</body>
+</html>

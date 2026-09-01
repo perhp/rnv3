@@ -1,0 +1,27 @@
+{{define "content"}}
+  <div class="panel-label">
+    <h2>{{L "admin"}}</h2>
+    <span class="rule"></span>
+    <span class="label-aux">{{L "login_required"}}</span>
+  </div>
+
+  {{if .Data.Error}}
+    <div class="alert alert-error" role="alert">
+      {{.Data.Error}}
+      <button type="button" class="alert-close" aria-label="Close">&times;</button>
+    </div>
+  {{end}}
+
+  <form method="post" action="/admin/login" class="table-panel" style="padding: 16px; max-width: 420px; display: flex; flex-direction: column; gap: 12px;">
+    <input type="hidden" name="next" value="{{.Data.Next}}">
+    <label style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 4px;">{{L "username"}}
+      <input type="text" name="username" autocomplete="username" autofocus required>
+    </label>
+    <label style="font-size: 0.85rem; display: flex; flex-direction: column; gap: 4px;">{{L "password"}}
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <div>
+      <button type="submit" class="page-btn">{{L "login"}}</button>
+    </div>
+  </form>
+{{end}}

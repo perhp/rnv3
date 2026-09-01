@@ -178,13 +178,18 @@ web:
     cert_file: ""
     key_file: ""
   admin:
-    enabled: true
+    enabled: false                 # true = require login for /admin (RN2 lock_admin_page)
     username: admin
-    password_hash: ""              # generate with: rnv3 -hash-password
+    password_hash: ""              # generate with: rnv3 -hash-password. Enabled without a hash = admin
+                                   # pages locked, nobody can log in (daemon still starts)
   instruments:
     satvis: true
     solar_terminator: true
     coronal: false                 # high data usage
+  captures_per_page: 18
+  admin_captures_per_page: 100
+  date_format: "01/02/2006"      # Go time layouts (RN2: m/d/Y)
+  datetime_format: "01/02/2006 15:04:05"
 
 paths:
   data_dir: /var/lib/rnv3         # database, TLE cache, state

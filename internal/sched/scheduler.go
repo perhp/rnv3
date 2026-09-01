@@ -91,6 +91,9 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			}
 		case <-timer.C:
 			if wakeReason == "pass" && next != nil {
+				// The runner claims the row scheduled→capturing atomically, so
+				// a pass cancelled from the admin page while the timer was
+				// pending is a no-op here.
 				s.runner.Run(ctx, *next, satByName(cfg, next.Satellite))
 			} else {
 				if err := s.plan(ctx); err != nil {

@@ -227,6 +227,16 @@ binary, unit file, udev rules, directories, SatDump.
   Visual-parity check against RN2 output happens at first Pi deploy.)
 - [ ] **M4 — Web UI port**: templates + API + SSE terminal + admin + RSS; the migration importer,
   so the UI is tested against real history. *Exit: feature-parity walkthrough against the PHP panel.*
+  (Code complete 2026-09-01: `internal/web` serves the ops-console 1:1 — `rn2.css`/`rn2.js`
+  carried over, Twig → `html/template`, RN2's URLs preserved (`/passes`, `/captures?page_no=`,
+  `/captures/listImages?pass_id=`, `/stats`, `/admin/*`, `/api/{passes,captures,capture,status,rss}`,
+  `/images/…`). Terminal streams SatDump output over SSE (`/passes/events`, fed by
+  `internal/livelog` from the capture runner) with `/passes/status` polling as fallback. Admin:
+  login form + bcrypt + HttpOnly session + CSRF, deletes are POST; "delete pass" = cancelled
+  state (survives replans) + scheduler wake. `tools/migrate` imports panel.db + /srv/images,
+  keeping RN2 capture ids so old capture URLs resolve, and redraws the sky map. Walked through
+  locally against a migrated fixture; the parity walkthrough against the live PHP panel happens
+  at first Pi deploy, with real history.)
 - [ ] **M5 — Notifications, watchdog, retention, best-of-day.**
 - [ ] **M6 — Cutover**: install script hardening, disable old cron/at jobs, run rnv3 as the sole
   owner of the SDR for a week, then retire the old stack on the Pi.

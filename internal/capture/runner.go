@@ -13,6 +13,7 @@ import (
 
 	"github.com/perhp/rnv3/internal/cadu"
 	"github.com/perhp/rnv3/internal/config"
+	"github.com/perhp/rnv3/internal/livelog"
 	"github.com/perhp/rnv3/internal/predict"
 	"github.com/perhp/rnv3/internal/store"
 )
@@ -65,9 +66,19 @@ type Runner struct {
 	Prov      *config.Provider
 	St        *store.Store
 	Processor PostProcessor
+	// Live receives the decoder output as it happens, for the panel's
+	// terminal; nil disables.
+	Live *livelog.Hub
 	// Exec substitutes the process constructor in tests; nil means the real
 	// satdump binary from Paths.SatdumpBinary.
 	Exec func(ctx context.Context, name string, args ...string) *exec.Cmd
+}
+
+// live publishes one line to the panel terminal (no-op without a hub).
+func (r *Runner) live(line string) {
+	if r.Live != nil {
+		r.Live.Publish(line)
+	}
 }
 
 // Run owns the pass from AOS to a terminal state. Errors are recorded on the
@@ -84,10 +95,20 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 	}
 	captureSeconds := int(duration.Seconds())
 
-	if err := r.St.SetPassState(p.ID, store.StateCapturing, ""); err != nil {
+	claimed, err := r.St.ClaimPass(p.ID)
+	if err != nil {
 		log.Error("cannot mark pass capturing", "err", err)
 		return
 	}
+	if !claimed {
+		log.Info("pass is no longer scheduled (cancelled or replanned); not capturing")
+		return
+	}
+	if r.Live != nil {
+		r.Live.Reset(p.ID)
+	}
+	r.live(fmt.Sprintf("=== %s pass %d: capturing for %ds (max elevation %.0f°)",
+		sat.Name, p.ID, captureSeconds, p.MaxElevation))
 
 	fileBase := FileBase(sat.Name, time.Unix(p.StartTS, 0))
 	workDir, inRAM, err := makeWorkDir(cfg, p.ID, sat)
@@ -109,6 +130,7 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 	if err := r.St.SetPassState(p.ID, store.StateProcessing, ""); err != nil {
 		log.Error("cannot mark pass processing", "err", err)
 	}
+	r.live("=== capture finished, processing images")
 
 	// Day/night classification at AOS+90s, RN2 parity.
 	sunEl := predict.SunElevation(cfg.Station.Latitude, cfg.Station.Longitude,
@@ -136,6 +158,7 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 			log.Error("cannot mark pass decoded", "err", err)
 		}
 		log.Info("pass decoded", "images", images, "daylight", daylight, "max_snr", maxSNR)
+		r.live(fmt.Sprintf("=== pass decoded: %d images", images))
 		r.cleanupWorkDir(workDir, true)
 	case !recording:
 		r.fail(p.ID, withExitInfo("no recording produced", runErr))
@@ -185,6 +208,7 @@ func (r *Runner) runSatdump(ctx context.Context, cfg *config.Config, workDir str
 	cmd.Stderr = cmd.Stdout
 
 	log.Info("satdump starting", "args", strings.Join(args, " "))
+	r.live("$ " + filepath.Base(cfg.Paths.SatdumpBinary) + " " + strings.Join(args, " "))
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start satdump: %w", err)
 	}
@@ -199,6 +223,7 @@ func (r *Runner) runSatdump(ctx context.Context, cfg *config.Config, workDir str
 		}
 		snr.Feed(line)
 		fmt.Fprintln(logFile, line)
+		r.live(line)
 	}
 
 	err = cmd.Wait()
@@ -288,6 +313,7 @@ func (r *Runner) cleanupWorkDir(dir string, success bool) {
 
 func (r *Runner) fail(id int64, reason string) {
 	slog.Error("pass failed", "pass_id", id, "reason", reason)
+	r.live("=== pass failed: " + reason)
 	if err := r.St.SetPassState(id, store.StateFailed, reason); err != nil {
 		slog.Error("cannot mark pass failed", "pass_id", id, "err", err)
 	}

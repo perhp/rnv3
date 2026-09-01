@@ -1,0 +1,496 @@
+{{define "content"}}
+  <div class="panel-label">
+    <h2>{{L "live_status"}}</h2>
+    <span class="rule"></span>
+  </div>
+  <div class="term" id="live-term">
+    <div class="term-titlebar">
+      <span class="term-dot"></span><span class="term-dot"></span><span class="term-dot"></span>
+      <span class="term-title">rnv3@ground:~ — tail -f satdump.log</span>
+      <span class="term-conn" id="term-conn">&#9675; IDLE</span>
+      <button type="button" class="term-btn term-btn-max" id="term-max" title="{{L "fullscreen"}}" aria-label="{{L "fullscreen"}}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5h4v4"/><path d="M13.5 2.5L9 7"/><path d="M6.5 13.5h-4v-4"/><path d="M2.5 13.5L7 9"/></svg>
+      </button>
+      <button type="button" class="term-btn term-btn-close" id="term-close" title="{{L "close"}}" aria-label="{{L "close"}}">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
+    </div>
+    <div class="term-screen">
+      <div class="term-line">
+        <span class="term-prompt">rnv3@ground:~$</span>
+        <span id="live-status">{{L "no_capture_pass"}}</span>
+      </div>
+      <pre id="live-log" style="display: none;"></pre>
+      <div id="term-idle" class="term-idle" style="display: none;"></div>
+      <div class="term-line"><span class="term-cursor" aria-hidden="true"></span></div>
+    </div>
+  </div>
+
+  {{if .Inst.Satvis}}
+    <div class="panel-label">
+      <h2>Instruments</h2>
+      <span class="rule"></span>
+      <span class="label-aux">{{num .Station.Latitude}}, {{num .Station.Longitude}}</span>
+    </div>
+    <div class="instrument-grid hide-sm">
+      <div class="instrument" id="satvis">
+        <div class="instrument-body">
+          <iframe name="satvis" title="Orbital track" src="{{.Data.SatvisSrc}}"></iframe>
+        </div>
+      </div>
+    </div>
+  {{end}}
+
+  {{if .Inst.SolarTerminator}}
+    <div class="panel-label">
+      <h2>Solar terminator</h2>
+      <span class="rule"></span>
+    </div>
+    <div class="instrument">
+      <div class="instrument-body">
+        <img src="https://www.timeanddate.com/scripts/sunmap.php?iso=&amp;earth=1" alt="Day and night across the Earth">
+      </div>
+    </div>
+  {{end}}
+
+  <div class="panel-label">
+    <h2>Pass schedule</h2>
+    <span class="rule"></span>
+  </div>
+  <div class="table-panel">
+    <table class="telemetry" id="passes">
+      <thead>
+        <tr>
+          <th class="center">{{L "reception_status"}}</th>
+          <th>{{L "satellite"}}</th>
+          <th class="center">{{L "pass_start"}}</th>
+          <th class="center">{{L "pass_end"}}</th>
+          <th>{{L "max_elev"}}</th>
+          <th class="center hide-sm">{{L "pass_start_azimuth"}}</th>
+          <th class="center hide-sm">{{L "travel_direction"}}</th>
+          <th class="center hide-sm">{{L "frame_yield"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{/* rows are rendered client-side from /passes/events (or /passes/status) */}}
+        <tr>
+          <td colspan="8" class="no-passes">&#8230;</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {{if .Inst.Coronal}}
+    <div class="panel-label">
+      <h2>Coronal mass ejection activity</h2>
+      <span class="rule"></span>
+      <span class="label-aux">SOHO LASCO C2 / C3 &middot; STEREO-A COR2</span>
+    </div>
+    <div class="coronal-row">
+      <div class="instrument"><div class="instrument-body"><img src="https://sohowww.nascom.nasa.gov/data/LATEST/current_c2.gif" alt="SOHO LASCO C2 latest image"></div></div>
+      <div class="instrument"><div class="instrument-body"><img src="https://sohowww.nascom.nasa.gov/data/LATEST/current_c3.gif" alt="SOHO LASCO C3 latest image"></div></div>
+      <div class="instrument"><div class="instrument-body"><img src="https://stereo.gsfc.nasa.gov/beacon/latest_512/ahead_cor2_latest.jpg" alt="STEREO-A COR2 latest image"></div></div>
+    </div>
+  {{end}}
+{{end}}
+
+{{define "scripts"}}
+  <script>
+    (function() {
+      var statusEl = document.getElementById('live-status');
+      var logEl = document.getElementById('live-log');
+
+      // terminal-style scrollback: follow the newest output unless the user
+      // scrolled up to read; scrolling back down re-engages the follow
+      var logFollow = true;
+      logEl.addEventListener('scroll', function() {
+        logFollow = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 4;
+      });
+      var termEl = document.getElementById('live-term');
+      var connEl = document.getElementById('term-conn');
+      var idleEl = document.getElementById('term-idle');
+      var tableEl = document.querySelector('#passes tbody');
+      var stationLat = {{.Data.Lat}};
+      var stationLon = {{.Data.Lon}};
+      var nextPassLabel = {{L "next_pass_label"}};
+      var idleLabel = {{L "no_capture_pass"}};
+      var satvisBase = {{.Data.SatvisBase}} || null;
+      var viewCaptureLabel = {{L "view_capture"}};
+      var stateLabels = {
+        capturing: {{L "running_pass"}},
+        processing: {{L "processing_pass"}}
+      };
+      var lampTitles = {
+        done: {{L "completed_pass"}},
+        failed: {{L "failed_pass"}},
+        running: {{L "running_pass"}},
+        processing: {{L "processing_pass"}},
+        conflict: {{L "conflicting_pass"}},
+        skipped: {{L "skipped_pass"}},
+        next: {{L "next_pass"}},
+        missed: {{L "no_capture_pass"}}
+      };
+      var lampIcons = {
+        done: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>',
+        failed: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
+        running: '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="4" fill="currentColor"/></svg>',
+        processing: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M8 2.5a5.5 5.5 0 1 1-5.5 5.5"/></svg>',
+        conflict: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5L14.5 13.5H1.5z"/><path d="M8 7v3"/><path d="M8 12v.01"/></svg>',
+        next: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.5l2.5 1.5"/></svg>',
+        missed: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>'
+      };
+
+      function esc(s) {
+        return String(s).replace(/[&<>"']/g, function(c) {
+          return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+        });
+      }
+
+      function lamp(kind, title) {
+        return '<span class="lamp lamp-' + kind + '" title="' + esc(title || lampTitles[kind]) + '">' + lampIcons[kind] + '</span>';
+      }
+
+      // frame yield: how much of what the spacecraft sent actually reached us.
+      // Null for NOAA APT passes (no frames) and for anything captured before
+      // the metric existed, so those render as an em dash rather than 0%.
+      var frameLabels = {
+        received: {{L "frames_received"}},
+        loss: {{L "frame_loss"}},
+        gap: {{L "largest_frame_gap"}}
+      };
+
+      function frameCell(p) {
+        if (p.frames_received === null || p.frames_received === undefined || p.frames_received === '') {
+          return '<span class="faint">&mdash;</span>';
+        }
+        var loss = Number(p.frame_loss_pct);
+        var kind = loss >= 40 ? 'bad' : (loss >= 10 ? 'warn' : 'good');
+        var title = frameLabels.received + ': ' + p.frames_received + '/' + p.frames_expected + '\n' +
+                    frameLabels.loss + ': ' + loss.toFixed(1) + '%\n' +
+                    frameLabels.gap + ': ' + p.largest_frame_gap;
+        return '<span class="elev-gauge frame-gauge ' + kind + '" title="' + esc(title) + '">' +
+                 '<span class="num">' + Math.round(loss) + '%</span>' +
+                 '<i style="--yield: ' + Math.max(0, Math.round(100 - loss)) + '%"><b></b></i>' +
+               '</span>';
+      }
+
+      function lampFor(p, now, prevEnd) {
+        // a capture id means the pass has a capture - the lamp links to it
+        if (p.id) {
+          return '<a class="lamp-link" href="/captures/listImages?pass_id=' + encodeURIComponent(p.id) + '">' +
+                 lamp('done', lampTitles.done + ' — ' + viewCaptureLabel) + '</a>';
+        }
+        if (p.status === 'failed') return lamp('failed', lampTitles.failed + (p.error_text ? ': ' + p.error_text : ''));
+        // skipped: lost an overlap or failed the sun gate - the reason is in error_text
+        if (p.status === 'skipped') return lamp('conflict', lampTitles.skipped + (p.error_text ? ': ' + p.error_text : ''));
+        if (now > p.pass_start && now < p.pass_end) return lamp('running');
+        if (p.status === 'capturing' || p.status === 'processing') return lamp('processing');
+        if (prevEnd >= p.pass_start) return lamp('conflict');
+        if (now < p.pass_start) return lamp('next');
+        return lamp('missed');
+      }
+
+      function renderPasses(d) {
+        if (!d.passes) return;
+        var now = d.server_time;
+        var rows = [];
+        if (!d.passes.length) {
+          rows.push('<tr><td colspan="8" class="no-passes">0 ' + esc({{L "passes"}}) + '</td></tr>');
+        }
+        var lastDate = null;
+        var prevEnd = 0;
+        d.passes.forEach(function(p) {
+          if (p.date_key !== lastDate) {
+            rows.push('<tr class="date-separator"><td colspan="8">' + esc(p.date_label) + '</td></tr>');
+            lastDate = p.date_key;
+          }
+          var inactive = (!p.is_active || p.pass_end < now) && p.status !== 'capturing' && p.status !== 'processing';
+          var sat = satvisBase
+            ? '<a href="' + esc(satvisBase + encodeURIComponent(p.sat_name)) + '" target="satvis">' + esc(p.sat_name) + '</a>'
+            : esc(p.sat_name);
+          var ew = '';
+          if (p.azimuth_at_max !== '' && p.azimuth_at_max !== null) {
+            ew = (p.azimuth_at_max >= 0 && p.azimuth_at_max <= 180) ? 'E' : 'W';
+          }
+          rows.push('<tr' + (inactive ? ' class="inactive"' : '') + '>' +
+            '<td class="center">' + lampFor(p, now, prevEnd) + '</td>' +
+            '<td>' + sat + '</td>' +
+            '<td class="center num">' + esc(p.start_label) + '</td>' +
+            '<td class="center num">' + esc(p.end_label) + '</td>' +
+            '<td><span class="elev-gauge' + (p.max_elev >= 60 ? ' prime' : '') + '">' +
+              '<span class="num">' + p.max_elev + '&#176;' + ew + '</span>' +
+              '<i style="--elev: ' + Math.round((p.max_elev / 90) * 100) + '%"><b></b></i>' +
+            '</span></td>' +
+            '<td class="center num hide-sm">' + (p.pass_start_azimuth === '' || p.pass_start_azimuth === null ? '' : p.pass_start_azimuth + '&#176;') + '</td>' +
+            '<td class="center num hide-sm">' + (p.direction ? esc(p.direction) : '') + '</td>' +
+            '<td class="center num hide-sm">' + frameCell(p) + '</td>' +
+            '</tr>');
+          prevEnd = p.pass_end;
+        });
+        tableEl.innerHTML = rows.join('');
+      }
+
+      function fmtTime(epoch) {
+        return new Date(epoch * 1000).toLocaleTimeString();
+      }
+
+      function fmtDelta(seconds) {
+        seconds = Math.max(0, seconds);
+        var h = Math.floor(seconds / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        var s = seconds % 60;
+        var pad = function(n) { return (n < 10 ? '0' : '') + n; };
+        return (h > 0 ? h + ':' + pad(m) : m) + ':' + pad(s);
+      }
+
+      // coarse two-unit duration for "ago" / TLE age / uptime readouts
+      function fmtAge(seconds) {
+        seconds = Math.max(0, Math.round(seconds));
+        var d = Math.floor(seconds / 86400);
+        var h = Math.floor((seconds % 86400) / 3600);
+        var m = Math.floor((seconds % 3600) / 60);
+        if (d > 0) return d + 'd ' + h + 'h';
+        if (h > 0) return h + 'h ' + m + 'm';
+        if (m > 0) return m + 'm';
+        return seconds + 's';
+      }
+
+      function fmtGB(bytes) {
+        var g = bytes / 1073741824;
+        return (g >= 100 ? Math.round(g) : g.toFixed(1)) + 'G';
+      }
+
+      function pad2(n) { return (n < 10 ? '0' : '') + n; }
+
+      // last status payload plus a server clock offset, so the countdown and
+      // clock tick locally every second between status updates
+      var last = null;
+      var clockOffset = 0;
+      function nowEpoch() { return Math.round(Date.now() / 1000) + clockOffset; }
+
+      var stationQTH = Math.abs(stationLat).toFixed(2) + '°' + (stationLat >= 0 ? 'N' : 'S') + ' ' +
+                       Math.abs(stationLon).toFixed(2) + '°' + (stationLon >= 0 ? 'E' : 'W');
+
+      function renderStatus() {
+        if (!last) return;
+        var now = nowEpoch();
+        if (last.current) {
+          statusEl.textContent = last.current.sat_name + ' — ' +
+            (stateLabels[last.current.status] || last.current.status) +
+            ' (' + fmtDelta(now - last.current.pass_start) + ', ' + last.current.max_elev + '°)';
+        } else if (last.next) {
+          statusEl.textContent = nextPassLabel + ': ' + last.next.sat_name +
+            ' @ ' + fmtTime(last.next.pass_start) +
+            ' (T-' + fmtDelta(last.next.pass_start - now) + ', ' + last.next.max_elev + '°)';
+        } else {
+          statusEl.textContent = idleLabel;
+        }
+      }
+
+      function updateClock() {
+        var el = document.getElementById('idle-clock');
+        if (!el) return;
+        var d = new Date(nowEpoch() * 1000);
+        el.textContent = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + ' ' +
+          pad2(d.getHours()) + ':' + pad2(d.getMinutes()) + ':' + pad2(d.getSeconds()) + ' local · ' +
+          d.toISOString().substr(11, 8) + ' utc';
+      }
+
+      // idle dashboard: station clock, today's tally + TLE age, last capture
+      // summary, host vitals and the upcoming queue (fullscreen only)
+      function renderIdle(d) {
+        if (d.current) {
+          idleEl.style.display = 'none';
+          return;
+        }
+        var now = d.server_time;
+        var html = [];
+
+        html.push('<div class="term-line"><span class="idle-label">station</span>' +
+          '<span id="idle-clock"></span> <span class="dim">·</span> ' + stationQTH + '</div>');
+
+        // tally captured vs elapsed, skipping passes that were never
+        // scheduled (overlap losers, sun gate)
+        var elapsed = 0, captured = 0, togo = 0;
+        (d.passes || []).forEach(function(p) {
+          if (p.date_key !== d.today) return;
+          if (p.status === 'skipped') return;
+          if (!p.is_active && !p.id && !p.status) return;
+          if (p.pass_end <= now) {
+            elapsed++;
+            if (p.id) captured++;
+          } else if (p.pass_start > now) {
+            togo++;
+          }
+        });
+        var todayParts = [captured + '/' + elapsed + ' passes captured'];
+        if (togo) todayParts.push(togo + ' to go');
+        if (d.tle_age !== null && d.tle_age !== undefined) {
+          // TLEs refresh daily - anything past 2 days means the refresh is broken
+          var tleCls = d.tle_age > 345600 ? 'bad' : (d.tle_age > 172800 ? 'warn' : '');
+          todayParts.push('<span class="' + tleCls + '">tle ' + fmtAge(d.tle_age) + '</span>');
+        }
+        html.push('<div class="term-line"><span class="idle-label">today</span>' +
+          todayParts.join(' <span class="dim">·</span> ') + '</div>');
+
+        if (d.latest) {
+          var lastParts = [esc(d.latest.sat_name) + ' @ ' + esc(d.latest.time_label) +
+            ' (' + fmtAge(now - d.latest.pass_start) + ' ago, ' + d.latest.max_elev + '°)'];
+          if (d.latest.max_snr !== null && d.latest.max_snr !== undefined) {
+            lastParts.push('snr ' + Number(d.latest.max_snr).toFixed(1) + ' dB');
+          }
+          if (d.latest.frame_loss_pct !== null && d.latest.frame_loss_pct !== undefined) {
+            lastParts.push('frames ' + Math.max(0, 100 - Number(d.latest.frame_loss_pct)).toFixed(1) + '%');
+          }
+          html.push('<div class="term-line"><span class="idle-label">last</span>' +
+            lastParts.join(' <span class="dim">·</span> ') + '</div>');
+        }
+
+        var v = d.vitals || {};
+        var vParts = [];
+        if (v.cpu_temp !== undefined) {
+          var cpuCls = v.cpu_temp >= 80 ? 'bad' : (v.cpu_temp >= 70 ? 'warn' : '');
+          vParts.push('<span class="' + cpuCls + '">cpu ' + Number(v.cpu_temp).toFixed(1) + '°C</span>');
+        }
+        if (v.load !== undefined) vParts.push('load ' + Number(v.load).toFixed(2));
+        if (v.mem_used_pct !== undefined) vParts.push('mem ' + v.mem_used_pct + '%');
+        if (v.disk_free !== undefined) {
+          var diskCls = v.disk_free < 2147483648 ? 'bad' : (v.disk_free < 10737418240 ? 'warn' : '');
+          vParts.push('<span class="' + diskCls + '">disk ' + fmtGB(v.disk_free) + ' free</span>');
+        }
+        if (v.uptime !== undefined) vParts.push('up ' + fmtAge(v.uptime));
+        if (vParts.length) {
+          html.push('<div class="term-line"><span class="idle-label">system</span>' +
+            vParts.join(' <span class="dim">·</span> ') + '</div>');
+        }
+
+        var upcoming = (d.passes || []).filter(function(p) {
+          return p.is_active && p.pass_start > now;
+        }).slice(0, 8);
+        if (upcoming.length) {
+          html.push('<div class="term-line dim queue-head">upcoming</div>');
+          var lastDate = d.today;
+          upcoming.forEach(function(p) {
+            if (p.date_key !== lastDate) {
+              html.push('<div class="term-line queue dim">-- ' + esc(p.date_label) + '</div>');
+              lastDate = p.date_key;
+            }
+            var ew = '';
+            if (p.azimuth_at_max !== '' && p.azimuth_at_max !== null) {
+              ew = (p.azimuth_at_max >= 0 && p.azimuth_at_max <= 180) ? 'E' : 'W';
+            }
+            var dir = p.direction === 'Southbound' ? '↓S' : (p.direction === 'Northbound' ? '↑N' : '');
+            html.push('<div class="term-line queue' + (p.max_elev >= 60 ? ' prime' : '') + '">' +
+              esc(p.start_label) + '  ' +
+              esc(String(p.sat_name).padEnd(13)) +
+              String(p.max_elev + '°' + ew).padStart(5) + '  ' + dir + '</div>');
+          });
+        }
+
+        idleEl.innerHTML = html.join('');
+        idleEl.style.display = 'block';
+      }
+
+      // fullscreen mode: the terminal becomes a fixed overlay; the scrollback
+      // is always kept at full depth, so it works in both modes
+      function setMax(on) {
+        termEl.classList.toggle('max', on);
+        document.body.classList.toggle('term-max-open', on);
+        if (logFollow) logEl.scrollTop = logEl.scrollHeight;
+      }
+      document.getElementById('term-max').addEventListener('click', function() { setMax(true); });
+      document.getElementById('term-close').addEventListener('click', function() { setMax(false); });
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && termEl.classList.contains('max')) setMax(false);
+      });
+
+      // scrollback: a status payload carries a snapshot of the running
+      // capture's output; between snapshots the event stream appends lines
+      var maxLogLines = 500;
+      var logPassId = null;
+      var logSeq = 0; // sequence of the newest line shown
+
+      function setLog(lines, passId, seq) {
+        logEl.textContent = lines.join('\n');
+        logPassId = passId;
+        logSeq = seq || 0;
+        if (logFollow) logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function appendLog(ev) {
+        // a line already covered by the last snapshot must not repeat
+        if (ev.seq <= logSeq) return;
+        logSeq = ev.seq;
+        var line = ev.line;
+        logEl.style.display = 'block';
+        var text = logEl.textContent;
+        text = text ? text + '\n' + line : line;
+        var lines = text.split('\n');
+        if (lines.length > maxLogLines) text = lines.slice(-maxLogLines).join('\n');
+        logEl.textContent = text;
+        if (logFollow) logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      function applyStatus(d, fromPoll) {
+        last = d;
+        clockOffset = d.server_time - Math.round(Date.now() / 1000);
+        renderPasses(d);
+        termEl.classList.toggle('rec', !!d.current);
+        connEl.innerHTML = d.current ? '&#9679; REC' : '&#9675; IDLE';
+        if (d.current) {
+          logEl.style.display = 'block';
+          // polling replaces the tail every time (RN2 behaviour); the event
+          // stream only resyncs when a new capture starts
+          if (d.log_tail && (fromPoll || d.log_pass_id !== logPassId)) {
+            setLog(d.log_tail, d.log_pass_id, d.log_seq);
+          }
+        } else {
+          logEl.style.display = 'none';
+        }
+        renderIdle(d);
+        renderStatus();
+        updateClock();
+      }
+
+      // live updates over Server-Sent Events, with the 5-second poll as the
+      // fallback when the stream cannot connect (proxies without streaming)
+      var pollTimer = null;
+      function refresh() {
+        fetch('/passes/status?lines=' + maxLogLines).then(function(r) { return r.json(); }).then(function(d) {
+          applyStatus(d, true);
+        }).catch(function() { /* transient poll errors are fine */ });
+      }
+      function startPolling() {
+        if (pollTimer) return;
+        refresh();
+        pollTimer = setInterval(refresh, 5000);
+      }
+      function stopPolling() {
+        if (!pollTimer) return;
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+      if (window.EventSource) {
+        var es = new EventSource('/passes/events');
+        es.onopen = stopPolling;
+        es.addEventListener('status', function(e) { applyStatus(JSON.parse(e.data), false); });
+        es.addEventListener('log', function(e) { appendLog(JSON.parse(e.data)); });
+        es.onerror = function() { startPolling(); };
+      } else {
+        startPolling();
+      }
+
+      setInterval(function() { renderStatus(); updateClock(); }, 1000);
+
+      // the page never reloads itself, so cache-bust the external imagery
+      // (solar terminator, coronal cams) every 5 minutes instead
+      setInterval(function() {
+        document.querySelectorAll('.instrument-body img').forEach(function(img) {
+          var base = img.dataset.src || img.src;
+          img.dataset.src = base;
+          img.src = base + (base.indexOf('?') >= 0 ? '&' : '?') + '_=' + Date.now();
+        });
+      }, 300000);
+    })();
+  </script>
+{{end}}

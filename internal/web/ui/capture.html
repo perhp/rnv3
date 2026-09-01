@@ -1,0 +1,46 @@
+{{define "content"}}
+  <div class="panel-label">
+    <h2>{{L "images"}}</h2>
+    <span class="rule"></span>
+    <span class="label-aux"><a href="/enhancement_details.html" target="_blank">Enhancement details</a></span>
+  </div>
+
+  <div class="capture-grid">
+    {{$c := .Data.Capture}}
+    {{range .Data.Enhancements}}
+      <div class="plate">
+        <a class="plate-img" href="{{.ImageURL}}">
+          <img src="{{.ThumbURL}}" alt="{{.Kind}}">
+        </a>
+        <div class="plate-caption">
+          <dl class="readout">
+            <dt>{{L "enhancement"}}</dt>
+            <dd>{{.Kind}}</dd>
+
+            <dt>{{L "gain"}}</dt>
+            <dd>{{gain $c.Gain}}</dd>
+
+            {{if $c.MaxSNR}}
+              <dt>{{L "max_snr"}}</dt>
+              <dd>{{f1 $c.MaxSNR}} dB</dd>
+
+              <dt>{{L "avg_snr"}}</dt>
+              <dd>{{f1 $c.AvgSNR}} dB</dd>
+            {{end}}
+
+            {{with $c.Frames}}
+              <dt>{{L "frames_received"}}</dt>
+              <dd>{{.Received}} / {{.Expected}}</dd>
+
+              <dt>{{L "frame_loss"}}</dt>
+              <dd>{{f1 .LossPct}}%</dd>
+
+              <dt>{{L "largest_frame_gap"}}</dt>
+              <dd>{{.LargestGap}}</dd>
+            {{end}}
+          </dl>
+        </div>
+      </div>
+    {{end}}
+  </div>
+{{end}}

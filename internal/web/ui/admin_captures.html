@@ -1,0 +1,105 @@
+{{define "admin_nav"}}
+<div class="tab-row">
+  <a{{if eq . "passes"}} class="active" aria-current="page"{{end}} href="/admin/passes">{{L "passes"}}</a>
+  <a{{if eq . "captures"}} class="active" aria-current="page"{{end}} href="/admin/captures">{{L "captures"}}</a>
+</div>
+{{end}}
+
+{{define "admin_status"}}
+  {{if .}}
+    {{if eq . "success"}}
+      <div class="alert alert-success" role="alert">
+        {{L "successful_delete_capture"}}
+        <button type="button" class="alert-close" aria-label="Close">&times;</button>
+      </div>
+    {{else}}
+      <div class="alert alert-error" role="alert">
+        {{.}}
+        <button type="button" class="alert-close" aria-label="Close">&times;</button>
+      </div>
+    {{end}}
+  {{end}}
+{{end}}
+
+{{define "logout"}}
+  {{if .AdminAuth}}
+    <form method="post" action="/admin/logout" class="logout-form" style="text-align: right; margin: -6px 0 10px;">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button type="submit" class="page-btn">{{L "logout"}}</button>
+    </form>
+  {{end}}
+{{end}}
+
+{{define "content"}}
+  {{template "admin_nav" "captures"}}
+  {{template "logout" .}}
+  {{template "admin_status" .Data.Status}}
+
+  <div class="caution">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5L14.5 13.5H1.5z"/><path d="M8 7v3"/><path d="M8 12v.01"/></svg>
+    <span>{{L "admin_capture_delete_warning"}}</span>
+  </div>
+
+  {{template "pagination" .Data.Pager}}
+
+  <div class="table-panel">
+    <table class="telemetry" id="admin-capture-list">
+      <thead>
+        <tr>
+          <th class="center"></th>
+          <th class="center">{{L "satellite"}}</th>
+          <th class="center">{{L "pass_start"}} / {{L "max_elev"}}</th>
+          <th class="center">{{L "image"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Data.Captures}}
+          <tr>
+            <td class="center">
+              <button type="button" class="btn-delete" title="{{L "admin_delete_confirm_header"}}"
+                      data-sat-name="{{.Satellite}}"
+                      data-elevation="{{.MaxElev}}"
+                      data-pass-start="{{.StartLabel}}"
+                      data-confirm-id="{{.ID}}">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11"/><path d="M6.5 4V2.5h3V4"/><path d="M4 4l.8 9.5h6.4L12 4"/><path d="M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>
+              </button>
+            </td>
+            <td class="center">{{.Satellite}}</td>
+            <td class="center num">
+              {{.StartLabel}} @
+              {{.MaxElev}}&#176;
+            </td>
+            <td class="center thumb-cell">
+              <a href="/captures/listImages?pass_id={{.ID}}">
+                <img src="{{.ThumbURL}}" alt="{{.Satellite}}">
+              </a>
+            </td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{template "pagination" .Data.Pager}}
+
+  <dialog class="confirm" id="confirm-delete" aria-labelledby="confirm-delete-label">
+    <div class="dialog-head" id="confirm-delete-label">{{L "admin_delete_confirm_header"}}</div>
+    <div class="dialog-body">
+      <dl class="readout">
+        <dt>{{L "satellite"}}</dt>
+        <dd data-field="satName"></dd>
+        <dt>{{L "pass_start"}}</dt>
+        <dd data-field="passStart"></dd>
+        <dt>{{L "elev"}}</dt>
+        <dd><span data-field="elevation"></span>&#176;</dd>
+      </dl>
+    </div>
+    <form method="post" action="/admin/deleteCapture" class="dialog-foot" id="confirm-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="page_no" value="{{.Data.Pager.CurPage}}">
+      <input type="hidden" name="id" value="" id="confirm-id">
+      <button type="button" class="btn dialog-cancel">{{L "cancel"}}</button>
+      <button type="submit" id="confirm-deletion" class="btn btn-danger">{{L "confirm"}}</button>
+    </form>
+  </dialog>
+{{end}}

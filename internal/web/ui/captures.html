@@ -1,0 +1,85 @@
+{{define "content"}}
+<form method="get" action="/captures" class="table-panel" style="padding: 10px 16px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+  <input type="hidden" name="page_no" value="1">
+
+  <label style="font-size: 0.85rem;">{{L "satellite"}}
+    <select name="sat">
+      <option value="">{{L "filter_all"}}</option>
+      {{range .Data.Sats}}
+        <option value="{{.}}"{{if eq $.Data.Filter.Satellite .}} selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+  </label>
+
+  <label style="font-size: 0.85rem;">{{L "filter_daynight"}}
+    <select name="daynight">
+      <option value="">{{L "filter_all"}}</option>
+      <option value="day"{{if eq .Data.Filter.DayNight "day"}} selected{{end}}>{{L "filter_day"}}</option>
+      <option value="night"{{if eq .Data.Filter.DayNight "night"}} selected{{end}}>{{L "filter_night"}}</option>
+    </select>
+  </label>
+
+  <label style="font-size: 0.85rem;">{{L "max_elev"}}
+    <select name="min_elev">
+      <option value="">{{L "filter_all"}}</option>
+      {{range .Data.Elevs}}
+        <option value="{{.}}"{{if eq $.Data.Filter.MinElevation .}} selected{{end}}>&ge; {{.}}&#176;</option>
+      {{end}}
+    </select>
+  </label>
+
+  <button type="submit" class="page-btn">{{L "filter_apply"}}</button>
+  {{if .Data.FilterQS}}
+    <a class="page-btn" href="/captures?page_no=1">{{L "filter_clear"}}</a>
+  {{end}}
+</form>
+
+{{template "pagination" .Data.Pager}}
+
+<div class="capture-grid">
+  {{range .Data.Captures}}
+    <div class="plate">
+      <a class="plate-img" href="/captures/listImages?pass_id={{.ID}}">
+        <img src="{{.ThumbURL}}" alt="{{.Satellite}}">
+      </a>
+      <div class="plate-caption">
+        <h3><a href="/captures/listImages?pass_id={{.ID}}">{{.Satellite}}</a></h3>
+        <dl class="readout">
+          <dt>{{L "elev"}}</dt>
+          <dd>{{.MaxElev}}&#176;{{.EW}}</dd>
+
+          {{if .StartAzimuth}}
+            <dt>{{L "pass_start_azimuth"}}</dt>
+            <dd>{{.StartAzimuth}}&#176;</dd>
+          {{end}}
+
+          {{if .Direction}}
+            <dt>{{L "travel_direction"}}</dt>
+            <dd>{{.Direction}}</dd>
+          {{end}}
+
+          <dt>{{L "pass_start"}}</dt>
+          <dd>{{.StartLabel}}</dd>
+
+          <dt>{{L "gain"}}</dt>
+          <dd>{{gain .Gain}}</dd>
+
+          {{if .MaxSNR}}
+            <dt>{{L "max_snr"}}</dt>
+            <dd>{{f1 .MaxSNR}} dB</dd>
+          {{end}}
+
+          {{with .Frames}}
+            <dt>{{L "frame_loss"}}</dt>
+            <dd title="{{.Received}}/{{.Expected}} {{L "frames"}}, {{L "largest_frame_gap"}}: {{.LargestGap}}">
+              {{f1 .LossPct}}%
+            </dd>
+          {{end}}
+        </dl>
+      </div>
+    </div>
+  {{end}}
+</div>
+
+{{template "pagination" .Data.Pager}}
+{{end}}

@@ -1,0 +1,223 @@
+{{define "dl_icon"}}<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5v7"/><path d="M4.5 6.5L8 10l3.5-3.5"/><path d="M2.5 13h11"/></svg>{{end}}
+
+{{define "content"}}
+  {{$s := .Data}}
+  <div class="panel-label">
+    <h2>{{L "station_record"}}</h2>
+    <span class="rule"></span>
+    <span class="label-aux">
+      {{- if $s.FirstLabel -}}
+        {{L "recording_since"}} {{$s.FirstLabel}}
+      {{- else -}}
+        {{L "no_record_yet"}}
+      {{- end -}}
+    </span>
+  </div>
+
+  <div class="readout-rail">
+    <div class="readout">
+      <div class="value">{{$s.Totals.TotalCaptures}}</div>
+      <span class="name">{{L "captures_decoded"}}</span>
+      <span class="note">{{L "all_time"}}</span>
+    </div>
+    <div class="readout">
+      <div class="value">
+        {{- if $s.SuccessRate -}}
+          {{$s.SuccessRate}}<span class="unit">%</span>
+        {{- else -}}
+          &mdash;
+        {{- end -}}
+      </div>
+      <span class="name">{{L "passes_completed"}}</span>
+      <span class="note">
+        {{- if gt $s.Totals.Attempted30d 0 -}}
+          {{$s.Totals.Attempted30d}} {{L "attempted_in_30d"}}
+        {{- else -}}
+          {{L "none_attempted_30d"}}
+        {{- end -}}
+      </span>
+    </div>
+    <div class="readout">
+      <div class="value">
+        {{- if $s.BestSNR -}}
+          {{f1 $s.BestSNR}}<span class="unit">dB</span>
+        {{- else -}}
+          &mdash;
+        {{- end -}}
+      </div>
+      <span class="name">{{L "strongest_signal"}}</span>
+      <span class="note">{{L "peak_snr_recorded"}}</span>
+    </div>
+  </div>
+
+  {{/* Chart recorder: one column per day of the window, stacked decoded over
+       failed, on ruled paper with the daily mean drawn as a datum line. */}}
+  <div class="recorder">
+    <div class="rec-chart" role="img" aria-label="{{L "recorder_alt"}}">
+      <span class="rec-rule" style="bottom: 100%"><i>{{$s.Axis}}</i></span>
+      <span class="rec-rule" style="bottom: 50%"><i>{{$s.AxisMid}}</i></span>
+      {{if $s.ShowDatum}}
+        <span class="rec-datum" style="bottom: {{$s.DatumPct}}%"></span>
+      {{end}}
+
+      {{range $s.Record}}
+        <div class="rec-day{{if .Nil}} is-nil{{end}}" style="--i: {{.Index}}" title="{{.Title}}">
+          {{if .FailPct}}
+            <span class="rec-bar fail" style="height: {{.FailPct}}%"></span>
+          {{end}}
+          {{if .OKPct}}
+            <span class="rec-bar ok" style="height: {{.OKPct}}%"></span>
+          {{end}}
+        </div>
+      {{end}}
+    </div>
+
+    <div class="rec-axis">
+      {{range $s.Ticks}}
+        <span{{if .Today}} class="is-today"{{end}}>{{if .Label}}<i>{{.Label}}</i>{{end}}</span>
+      {{end}}
+    </div>
+
+    <div class="rec-foot">
+      <span class="rec-key"><i class="ok"></i>{{L "decoded"}}</span>
+      <span class="rec-key"><i class="fail"></i>{{L "failed"}}</span>
+      {{if $s.ShowDatum}}
+        <span class="rec-key"><i class="datum"></i>{{L "mean"}} {{$s.Mean}}{{L "per_day_suffix"}}</span>
+      {{end}}
+      <span class="rec-span">{{L "last_30_days"}}</span>
+    </div>
+  </div>
+
+  <div class="panel-label">
+    <h2>{{L "per_satellite"}}</h2>
+    <span class="rule"></span>
+    <span class="label-aux">{{L "snr_bar_note"}}</span>
+  </div>
+  <div class="table-panel">
+    <table class="telemetry">
+      <thead>
+        <tr>
+          <th>{{L "satellite"}}</th>
+          <th class="center">{{L "captures"}}</th>
+          <th class="center">{{L "avg_elev"}}</th>
+          <th>{{L "avg_snr"}}</th>
+          <th class="center hide-sm">{{L "best_snr"}}</th>
+          <th>{{L "avg_frame_loss"}}</th>
+          <th class="center hide-sm">{{L "last_capture"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range $s.PerSat}}
+          <tr>
+            <td class="sat-name">{{.Satellite}}</td>
+            <td class="center num">{{.Captures}}</td>
+            <td class="center num">{{.AvgElev}}&#176;</td>
+            <td>
+              {{if and .AvgSNR $s.BestSNR}}
+                <span class="elev-gauge snr-gauge">
+                  <span class="num">{{f1 .AvgSNR}} dB</span>
+                  <i style="--snr: {{.SNRPct}}%"><b></b></i>
+                </span>
+              {{else}}
+                <span class="num faint">&mdash;</span>
+              {{end}}
+            </td>
+            <td class="center num hide-sm">{{if .BestSNR}}{{f1 .BestSNR}} dB{{else}}&mdash;{{end}}</td>
+            <td>
+              {{if .AvgFrameLoss}}
+                <span class="elev-gauge frame-gauge{{if .LossKind}} {{.LossKind}}{{end}}">
+                  <span class="num">{{f1 .AvgFrameLoss}}%</span>
+                  <i style="--yield: {{.YieldPct}}%"><b></b></i>
+                </span>
+              {{else}}
+                <span class="num faint">&mdash;</span>
+              {{end}}
+            </td>
+            <td class="center num hide-sm">{{.LastCapture}}</td>
+          </tr>
+        {{else}}
+          <tr>
+            <td colspan="7" class="no-passes">{{L "no_captures_yet"}}</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  {{if $s.Mosaics}}
+    <div class="panel-label">
+      <h2>{{L "daily_mosaic"}}</h2>
+      <span class="rule"></span>
+      <span class="label-aux">{{L "one_per_projection"}}</span>
+    </div>
+    <div class="composite-grid">
+      {{range $s.Mosaics}}
+        <figure class="instrument composite">
+          <a class="instrument-body" href="/images/{{.File}}">
+            <img src="/images/{{.File}}" alt="{{L "daily_mosaic"}} - {{.Label}}" loading="lazy">
+          </a>
+          <figcaption>
+            <span class="composite-meta">
+              <span class="composite-name">{{.Label}}</span>
+              <span class="composite-date">{{.DateLabel}}</span>
+            </span>
+            <a class="dl-btn" href="/images/{{.File}}" download
+               title="{{L "download"}}" aria-label="{{L "download"}} - {{L "daily_mosaic"}} {{.Label}}">{{template "dl_icon"}}</a>
+          </figcaption>
+        </figure>
+      {{end}}
+    </div>
+  {{end}}
+
+  {{if $s.Timelapses}}
+    <div class="panel-label">
+      <h2>{{L "timelapse"}}</h2>
+      <span class="rule"></span>
+      <span class="label-aux">{{L "one_per_projection"}}</span>
+    </div>
+    <div class="composite-grid">
+      {{range $s.Timelapses}}
+        <figure class="instrument composite">
+          <a class="instrument-body" href="/images/{{.File}}">
+            <img src="/images/{{.File}}" alt="{{L "timelapse"}} - {{.Label}}" loading="lazy">
+          </a>
+          <figcaption>
+            <span class="composite-meta">
+              <span class="composite-name">{{.Label}}</span>
+              <span class="composite-date">{{.DateLabel}}</span>
+            </span>
+            <a class="dl-btn" href="/images/{{.File}}" download
+               title="{{L "download"}}" aria-label="{{L "download"}} - {{L "timelapse"}} {{.Label}}">{{template "dl_icon"}}</a>
+          </figcaption>
+        </figure>
+      {{end}}
+    </div>
+  {{end}}
+
+  <div class="panel-label">
+    <h2>{{L "horizon_survey"}}</h2>
+    <span class="rule"></span>
+    <span class="label-aux">
+      {{- if $s.SkyMap -}}
+        {{$s.Totals.PassesPlotted}} {{L "passes_plotted"}}
+      {{- end -}}
+    </span>
+  </div>
+
+  {{if $s.SkyMap}}
+    <figure class="instrument sky-survey">
+      <div class="instrument-body">
+        <img src="{{$s.SkyMapURL}}" alt="{{L "sky_quality_map"}}">
+      </div>
+      <figcaption>
+        <span>{{L "sky_quality_map_help"}}</span>
+        <a class="dl-btn" href="{{$s.SkyMapURL}}" download="{{$s.SkyMapFile}}"
+           title="{{L "download"}}" aria-label="{{L "download"}} - {{L "sky_quality_map"}}">{{template "dl_icon"}}</a>
+      </figcaption>
+    </figure>
+  {{else}}
+    <div class="empty-panel">
+      <p>{{L "sky_quality_map_missing"}}</p>
+    </div>
+  {{end}}
+{{end}}

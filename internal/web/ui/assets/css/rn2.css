@@ -1,0 +1,1614 @@
+/* ------------------------------------------------------------------ */
+/* raspberry-noaa-v2 webpanel — ops console design system (light)      */
+/* Self-contained: no CDN frameworks, no webfonts (offline stations).  */
+/* ------------------------------------------------------------------ */
+
+:root {
+  --bg: #eef1f6;
+  --panel: #ffffff;
+  --raised: #e7ebf2;
+  --line: #c7d0dd;
+  --line-soft: #dde3ec;
+
+  --ink: #1b2534;
+  --dim: #4f6076;
+  --faint: #7f8da1;
+
+  --amber: #b06e0e;
+  --green: #22874d;
+  --red: #cc3a2b;
+  --blue: #2268c2;
+
+  --font-display: "Bahnschrift", "Barlow Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, "DejaVu Sans Mono", Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--blue);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+img,
+video,
+iframe {
+  max-width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Header: station identity plate + nav + clock zone                   */
+/* ------------------------------------------------------------------ */
+
+.masthead {
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.masthead-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  display: flex;
+  align-items: stretch;
+  gap: 1.5rem;
+}
+
+.station-plate {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.7rem 0;
+}
+
+.station-plate a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.station-name {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.station-sub {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: var(--amber);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.masthead nav {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+  margin-left: 0.5rem;
+}
+
+.masthead nav a {
+  display: flex;
+  align-items: center;
+  padding: 0 0.9rem;
+  color: var(--dim);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-bottom: 3px solid transparent;
+  border-top: 3px solid transparent;
+}
+
+.masthead nav a:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.masthead nav a.active {
+  color: var(--ink);
+  border-bottom-color: var(--amber);
+}
+
+.station-clock {
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.station-clock .tz-offset {
+  color: var(--faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Page scaffold                                                       */
+/* ------------------------------------------------------------------ */
+
+main.wrap {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 1.25rem 3rem;
+}
+
+/* Section eyebrow: engraved panel label */
+.panel-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 2rem 0 0.75rem;
+}
+
+.panel-label:first-child {
+  margin-top: 0;
+}
+
+.panel-label h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.panel-label .rule {
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+.panel-label .label-aux {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--faint);
+}
+
+.panel-label .label-aux a {
+  color: var(--faint);
+  text-decoration: underline;
+}
+.panel-label .label-aux a:hover {
+  color: var(--dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Instrument panels (satvis / animation / sunmap / coronal)           */
+/* ------------------------------------------------------------------ */
+
+.instrument-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.instrument {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.instrument-body {
+  background: #dfe4ec;
+}
+
+.instrument-body iframe {
+  display: block;
+  border: 0;
+  width: 100%;
+  height: 420px;
+}
+
+.instrument-body video {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  background: #000;
+}
+
+.instrument-body img {
+  display: block;
+  width: 100%;
+}
+
+.coronal-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Live status: phosphor CRT terminal                                  */
+/* ------------------------------------------------------------------ */
+
+.term {
+  background: #050905;
+  border: 1px solid #16351d;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(11, 20, 13, 0.35);
+}
+
+.term-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.8rem;
+  background: #0a120b;
+  border-bottom: 1px solid #16351d;
+}
+
+.term-dot {
+  flex: none;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: #16351d;
+}
+
+.term-dot:nth-child(2) {
+  background: #1e5a2c;
+}
+.term-dot:nth-child(3) {
+  background: #2c8a41;
+}
+
+.term-title {
+  margin-left: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: #3f9155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.term-conn {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.14em;
+  color: #3f9155;
+}
+
+.term.rec .term-conn {
+  color: #ff5c4d;
+  text-shadow: 0 0 6px rgba(255, 92, 77, 0.55);
+}
+
+/* titlebar buttons: fullscreen toggle, and its close counterpart */
+.term-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin-left: 0.5rem;
+  padding: 0;
+  border: 1px solid #16351d;
+  border-radius: 4px;
+  background: none;
+  color: #3f9155;
+  cursor: pointer;
+}
+.term-btn:hover {
+  color: #37f06a;
+  border-color: #2c8a41;
+}
+.term-btn svg {
+  width: 0.7rem;
+  height: 0.7rem;
+  display: block;
+}
+.term .term-btn-close {
+  display: none;
+}
+
+/* fullscreen mode: the terminal takes over the viewport; the expand button
+   swaps for the close one and the log area grows to fill the screen */
+.term.max {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+.term.max .term-btn-max {
+  display: none;
+}
+.term.max .term-btn-close {
+  display: inline-flex;
+}
+.term.max .term-screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* scale the type to the display - the panel size is far too small on the
+     small kiosk screens fullscreen mode exists for */
+  font-size: clamp(1rem, 2.6vmin, 1.5rem);
+}
+.term.max .term-screen pre {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  font-size: clamp(0.9rem, 2.4vmin, 1.35rem);
+}
+
+/* no background scroll while the terminal overlay is up */
+body.term-max-open {
+  overflow: hidden;
+}
+
+.term-screen {
+  position: relative;
+  padding: 0.8rem 1rem 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: #37f06a;
+  text-shadow: 0 0 6px rgba(55, 240, 106, 0.35);
+  background: radial-gradient(ellipse 120% 90% at 50% 0%, rgba(22, 66, 32, 0.35), transparent 70%), #050905;
+}
+
+/* scanlines */
+.term-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.22) 0, rgba(0, 0, 0, 0.22) 1px, transparent 1px, transparent 3px);
+}
+
+.term-line {
+  word-break: break-word;
+}
+
+.term-prompt {
+  color: #1fa348;
+  user-select: none;
+}
+
+.term-screen pre {
+  margin: 0.5rem 0 0.15rem;
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 0.74rem;
+  line-height: 1.5;
+  color: #27c257;
+  scrollbar-width: thin;
+  scrollbar-color: #1e5a2c transparent;
+}
+
+.term-screen pre::-webkit-scrollbar {
+  width: 6px;
+}
+.term-screen pre::-webkit-scrollbar-thumb {
+  background: #1e5a2c;
+  border-radius: 3px;
+}
+
+.term-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  vertical-align: text-bottom;
+  background: #37f06a;
+  box-shadow: 0 0 7px rgba(55, 240, 106, 0.65);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .term-cursor {
+    animation: term-blink 1.1s steps(1) infinite;
+  }
+  @keyframes term-blink {
+    50% {
+      opacity: 0;
+    }
+  }
+  .term.rec .term-conn {
+    animation: term-blink 1.4s steps(1) infinite;
+  }
+}
+
+/* idle dashboard: station clock, tally, last capture, vitals and the
+   upcoming pass queue - rendered only while no capture is running */
+.term-idle {
+  margin-top: 0.6rem;
+}
+
+.term-idle .idle-label {
+  display: inline-block;
+  min-width: 5.2em;
+  color: #1fa348;
+  text-shadow: none;
+  user-select: none;
+}
+
+.term-idle .dim {
+  color: #1fa348;
+  text-shadow: none;
+}
+
+.term-idle .warn {
+  color: #ffc247;
+  text-shadow: 0 0 6px rgba(255, 194, 71, 0.35);
+}
+
+.term-idle .bad {
+  color: #ff5c4d;
+  text-shadow: 0 0 6px rgba(255, 92, 77, 0.4);
+}
+
+.term-idle .queue {
+  white-space: pre;
+  color: #27c257;
+}
+
+.term-idle .queue.prime {
+  color: #37f06a;
+}
+
+.term-idle .queue-head {
+  margin-top: 0.6rem;
+}
+
+/* the pass table right below the panel already lists upcoming passes, so
+   the queue only shows in the fullscreen kiosk view */
+.term .term-idle .queue,
+.term .term-idle .queue-head {
+  display: none;
+}
+.term.max .term-idle .queue,
+.term.max .term-idle .queue-head {
+  display: block;
+}
+
+/* keep a long queue scrollable instead of pushing the cursor offscreen */
+.term.max .term-idle {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Data tables: telemetry grid                                         */
+/* ------------------------------------------------------------------ */
+
+.table-panel {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+table.telemetry {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+table.telemetry th {
+  padding: 0.55rem 0.75rem;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+table.telemetry td {
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
+}
+
+table.telemetry tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+table.telemetry tbody tr:hover td {
+  background: rgba(34, 104, 194, 0.06);
+}
+
+table.telemetry .num,
+table.telemetry .mono {
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+}
+
+table.telemetry .center {
+  text-align: center;
+}
+
+table.telemetry tr.inactive td {
+  color: var(--faint);
+}
+table.telemetry tr.inactive .lamp {
+  opacity: 0.35;
+}
+table.telemetry tr.inactive .elev-gauge i {
+  opacity: 0.35;
+}
+
+/* Date separator: a day divider engraved into the grid */
+table.telemetry tr.date-separator td {
+  padding: 0.4rem 0.75rem;
+  background: var(--raised);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: center;
+  color: var(--blue);
+}
+
+table.telemetry td.no-passes {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+/* ------------------------------------------------------------------ */
+/* Annunciator lamps (pass status)                                     */
+/* ------------------------------------------------------------------ */
+
+.lamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--raised);
+}
+
+.lamp svg {
+  /* 0.75rem = 12px: with the lamp's 22px content box (24px minus 1px
+     borders) this centers on whole pixels; fractional sizes rasterize
+     with a visible 1px right/down bias */
+  width: 0.75rem;
+  height: 0.75rem;
+  display: block;
+}
+
+.lamp-done {
+  border-color: rgba(34, 135, 77, 0.5);
+  color: var(--green);
+}
+
+/* a captured pass's lamp doubles as the link to its capture page */
+a.lamp-link {
+  display: inline-flex;
+  border-radius: 50%;
+}
+a.lamp-link:hover {
+  text-decoration: none;
+}
+a.lamp-link:hover .lamp-done {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(34, 135, 77, 0.18);
+}
+.lamp-running {
+  border-color: rgba(176, 110, 14, 0.6);
+  color: var(--amber);
+  background: rgba(176, 110, 14, 0.12);
+}
+.lamp-processing {
+  border-color: rgba(176, 110, 14, 0.6);
+  color: var(--amber);
+}
+.lamp-next {
+  border-color: rgba(34, 104, 194, 0.5);
+  color: var(--blue);
+}
+.lamp-conflict {
+  border-color: rgba(204, 58, 43, 0.6);
+  color: var(--red);
+}
+.lamp-failed {
+  border-color: rgba(204, 58, 43, 0.6);
+  color: var(--red);
+}
+.lamp-missed {
+  color: var(--faint);
+}
+
+/* keep failed passes legible even on dimmed (inactive) rows */
+table.telemetry tr.inactive .lamp-failed {
+  opacity: 0.75;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lamp-running {
+    animation: lamp-pulse 2s ease-in-out infinite;
+  }
+  @keyframes lamp-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgba(176, 110, 14, 0.35);
+    }
+    50% {
+      box-shadow: 0 0 0 5px rgba(176, 110, 14, 0);
+    }
+  }
+  .lamp-processing svg {
+    animation: lamp-spin 1.6s linear infinite;
+  }
+  @keyframes lamp-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Elevation gauge — the signature element                             */
+/* ------------------------------------------------------------------ */
+
+.elev-gauge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 7.5rem;
+}
+
+.elev-gauge .num {
+  min-width: 3.2rem;
+  text-align: right;
+}
+
+.elev-gauge i {
+  flex: 1;
+  display: block;
+  height: 4px;
+  min-width: 3rem;
+  border-radius: 2px;
+  background: var(--line-soft);
+  position: relative;
+  overflow: hidden;
+}
+
+.elev-gauge i b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--elev, 0%);
+  border-radius: 2px;
+  background: var(--blue);
+}
+
+.elev-gauge.prime i b {
+  background: var(--amber);
+}
+
+/* Frame yield gauge: shares the elevation gauge's layout, but the bar shows
+   how much of the downlink actually reached us and is colored by loss */
+.frame-gauge .num {
+  min-width: 2.6rem;
+}
+.frame-gauge i b {
+  width: var(--yield, 0%);
+  background: var(--green);
+}
+.frame-gauge.warn i b {
+  background: var(--amber);
+}
+.frame-gauge.bad i b {
+  background: var(--red);
+}
+
+.faint {
+  color: var(--faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* Capture gallery plates                                              */
+/* ------------------------------------------------------------------ */
+
+.capture-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 1rem;
+}
+
+.plate {
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 120ms ease;
+}
+
+.plate:hover {
+  border-color: var(--line);
+}
+
+.plate-img {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  background: #dfe4ec;
+}
+
+.plate-img img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.plate-caption {
+  padding: 0.7rem 0.85rem 0.85rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.plate-caption h3 {
+  margin: 0 0 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+.plate-caption h3 a {
+  color: inherit;
+}
+
+dl.readout {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.75rem;
+  font-size: 0.78rem;
+}
+
+dl.readout dt {
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--faint);
+  align-self: baseline;
+  padding-top: 0.1em;
+}
+
+dl.readout dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--dim);
+}
+
+/* ------------------------------------------------------------------ */
+/* Pagination toolbar                                                  */
+/* ------------------------------------------------------------------ */
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+
+.pager .page-pos {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.1em;
+  color: var(--faint);
+  text-transform: uppercase;
+}
+
+.pager a.page-btn,
+.pager span.page-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pager a.page-btn:hover {
+  text-decoration: none;
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.pager span.page-btn {
+  color: var(--faint);
+  border-color: var(--line-soft);
+}
+
+main.wrap > .pager:last-child {
+  margin: 1rem 0 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Admin: tabs, warnings, buttons, dialog                              */
+/* ------------------------------------------------------------------ */
+
+.tab-row {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 1rem;
+}
+
+.tab-row a {
+  padding: 0.5rem 1rem;
+  color: var(--dim);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border-bottom: 3px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab-row a:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.tab-row a.active {
+  color: var(--ink);
+  border-bottom-color: var(--amber);
+}
+
+.caution {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1rem;
+  background: rgba(204, 58, 43, 0.07);
+  border: 1px solid rgba(204, 58, 43, 0.35);
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 0.85rem;
+}
+
+.caution svg {
+  flex: none;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: var(--red);
+  margin-top: 0.15rem;
+}
+
+.btn-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.btn-delete svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+
+.btn-delete:hover {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.thumb-cell img {
+  max-height: 96px;
+  max-width: 128px;
+  display: block;
+  margin: 0 auto;
+  border-radius: 3px;
+}
+
+/* Alerts (post-delete status) */
+.alert {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  margin: 0 0 1rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+
+.alert-success {
+  background: rgba(34, 135, 77, 0.09);
+  border: 1px solid rgba(34, 135, 77, 0.4);
+  color: var(--green);
+}
+
+.alert-error {
+  background: rgba(204, 58, 43, 0.09);
+  border: 1px solid rgba(204, 58, 43, 0.4);
+  color: var(--red);
+}
+
+.alert .alert-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  opacity: 0.7;
+}
+
+.alert .alert-close:hover {
+  opacity: 1;
+}
+
+/* Native dialog confirm */
+dialog.confirm {
+  margin: auto;
+  padding: 0;
+  width: min(26rem, calc(100vw - 2rem));
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+  color: var(--ink);
+}
+
+dialog.confirm::backdrop {
+  background: rgba(27, 37, 52, 0.45);
+}
+
+dialog.confirm .dialog-head {
+  padding: 0.8rem 1.1rem;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--red);
+}
+
+dialog.confirm .dialog-body {
+  padding: 1rem 1.1rem;
+}
+
+dialog.confirm .dialog-body dl.readout {
+  font-size: 0.85rem;
+}
+
+dialog.confirm .dialog-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid var(--line);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.45rem 1.1rem;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--dim);
+  text-decoration: none;
+}
+
+.btn.btn-danger {
+  border-color: rgba(204, 58, 43, 0.5);
+  background: rgba(204, 58, 43, 0.12);
+  color: var(--red);
+}
+
+.btn.btn-danger:hover {
+  border-color: var(--red);
+}
+
+/* ------------------------------------------------------------------ */
+/* Static reference page (enhancement details)                         */
+/* ------------------------------------------------------------------ */
+
+.reference h1 {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 0.25rem;
+}
+
+.reference .reference-sub {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  margin: 0 0 1.5rem;
+}
+
+.reference dl {
+  margin: 0;
+}
+
+.reference dt {
+  font-family: var(--font-mono);
+  font-size: 0.95rem;
+  color: var(--amber);
+  margin: 1.25rem 0 0.25rem;
+}
+
+.reference dd {
+  margin: 0;
+  color: var(--dim);
+  max-width: 70ch;
+}
+
+/* ------------------------------------------------------------------ */
+/* Stats: readout rail + chart recorder                                */
+/* The rail and the recorder are one instrument - the rail's bottom    */
+/* border is suppressed so they share an edge.                         */
+/* ------------------------------------------------------------------ */
+
+.readout-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-bottom: 0;
+  border-radius: 6px 6px 0 0;
+}
+
+.readout {
+  padding: 0.9rem 1.1rem 1rem;
+  border-left: 1px solid var(--line-soft);
+}
+
+.readout:first-child {
+  border-left: 0;
+}
+
+.readout .value {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.readout .value .unit {
+  font-size: 0.9rem;
+  color: var(--dim);
+  margin-left: 0.1em;
+}
+
+.readout .name {
+  display: block;
+  margin-top: 0.55rem;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.readout .note {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+
+.recorder {
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 6px 6px;
+  padding: 1.5rem 1.1rem 0.75rem;
+}
+
+/* ruled chart paper: the gutter holds the scale, the baseline is the pen rest */
+.rec-chart {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 150px;
+  padding-left: 2.6rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.rec-rule,
+.rec-datum {
+  position: absolute;
+  left: 2.6rem;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.rec-rule {
+  border-top: 1px solid var(--line-soft);
+}
+
+.rec-rule i {
+  position: absolute;
+  left: -2.6rem;
+  width: 2.1rem;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-style: normal;
+  line-height: 1;
+  text-align: right;
+  color: var(--faint);
+}
+
+/* the daily mean, drawn as an instrument datum line and named in the key
+   below rather than labelled in place, where it would cross the trace */
+.rec-datum {
+  border-top: 1px dashed var(--amber);
+}
+
+.rec-day {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.rec-day:hover {
+  background: rgba(34, 104, 194, 0.07);
+}
+
+/* days the station recorded nothing keep their place in the series */
+.rec-day.is-nil::after {
+  content: "";
+  position: absolute;
+  inset: auto 19% 0 19%;
+  height: 2px;
+  background: var(--line-soft);
+}
+
+/* the trace is narrower than its day so a busy month reads as separate
+   strokes rather than one solid block */
+.rec-bar {
+  display: block;
+  width: 62%;
+  margin-inline: auto;
+}
+
+.rec-bar:first-child {
+  border-radius: 3px 3px 0 0;
+}
+
+.rec-bar.ok {
+  background: var(--blue);
+}
+.rec-bar.fail {
+  background: var(--red);
+}
+
+.rec-axis {
+  display: flex;
+  gap: 2px;
+  padding-left: 2.6rem;
+  margin-top: 0.45rem;
+}
+
+.rec-axis {
+  min-height: 0.9rem;
+}
+
+.rec-axis span {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* each tick hangs off its own day column; the two end ticks anchor to the
+   paper's edges instead of centring, so they cannot bleed past it */
+.rec-axis i {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-style: normal;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--faint);
+}
+
+.rec-axis span:first-child i {
+  left: 0;
+  transform: none;
+}
+.rec-axis span:last-child i {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.rec-axis span.is-today i {
+  color: var(--amber);
+}
+
+.rec-foot {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+.rec-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.rec-key i {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 2px;
+}
+
+.rec-key i.ok {
+  background: var(--blue);
+}
+.rec-key i.fail {
+  background: var(--red);
+}
+
+.rec-key i.datum {
+  width: 1.1rem;
+  height: 0;
+  border-top: 1px dashed var(--amber);
+  border-radius: 0;
+}
+
+.rec-span {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+/* the pen tracing left to right across the paper, once, on load */
+@media (prefers-reduced-motion: no-preference) {
+  .rec-day {
+    transform-origin: bottom;
+    animation: rec-trace 420ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards;
+    animation-delay: calc(var(--i, 0) * 16ms);
+  }
+
+  @keyframes rec-trace {
+    from {
+      transform: scaleY(0);
+    }
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Stats: per-satellite SNR bar, composites, sky survey                */
+/* ------------------------------------------------------------------ */
+
+/* shares the elevation gauge's layout; scaled to the station's best SNR */
+.snr-gauge .num {
+  min-width: 3.6rem;
+}
+.snr-gauge i b {
+  width: var(--snr, 0%);
+}
+
+.sat-name {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* the composites are reference plates, not the page's subject - they sit on a
+   tighter grid than the Passes page instruments so a full set fits one row */
+.composite-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+}
+
+figure.composite,
+figure.sky-survey {
+  margin: 0;
+}
+
+figure.composite {
+  display: flex;
+  flex-direction: column;
+}
+
+/* pins the caption to the bottom when a row's plates differ in height */
+figure.composite figcaption {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+figure.composite .composite-meta {
+  min-width: 0;
+}
+
+/* save button shared by the composite plates and the sky survey */
+a.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: auto;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--raised);
+  color: var(--dim);
+}
+a.dl-btn:hover {
+  color: var(--blue);
+  border-color: var(--blue);
+  text-decoration: none;
+}
+a.dl-btn svg {
+  width: 0.9rem;
+  height: 0.9rem;
+  display: block;
+}
+
+figure.composite figcaption,
+figure.sky-survey figcaption {
+  padding: 0.6rem 0.85rem 0.7rem;
+  border-top: 1px solid var(--line-soft);
+}
+
+figure.composite .composite-name {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+figure.composite .composite-date {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--faint);
+}
+
+/* the plate itself opens the full-size image */
+figure.composite a.instrument-body {
+  display: block;
+}
+
+figure.composite {
+  transition: border-color 120ms ease;
+}
+figure.composite:hover {
+  border-color: var(--line);
+}
+figure.composite:focus-within {
+  border-color: var(--amber);
+}
+
+figure.sky-survey .instrument-body {
+  background: var(--panel);
+  padding: 0.5rem;
+}
+
+figure.sky-survey .instrument-body img {
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+figure.sky-survey figcaption {
+  font-size: 0.85rem;
+  color: var(--dim);
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.empty-panel {
+  padding: 2.5rem 1.25rem;
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.empty-panel p {
+  margin: 0;
+  max-width: 52ch;
+  margin-inline: auto;
+  color: var(--faint);
+  font-size: 0.85rem;
+}
+
+/* ------------------------------------------------------------------ */
+/* Responsive                                                          */
+/* ------------------------------------------------------------------ */
+
+@media (max-width: 720px) {
+  .hide-sm {
+    display: none !important;
+  }
+
+  /* the aux fact drops to its own line rather than squeezing the heading */
+  .panel-label {
+    flex-wrap: wrap;
+  }
+  .panel-label .rule {
+    min-width: 1rem;
+  }
+  .panel-label .label-aux {
+    flex-basis: 100%;
+  }
+
+  .readout {
+    border-left: 0;
+    border-top: 1px solid var(--line-soft);
+  }
+  .readout:first-child {
+    border-top: 0;
+  }
+
+  .recorder {
+    padding: 1.5rem 0.8rem 0.75rem;
+  }
+  .rec-chart {
+    height: 110px;
+    gap: 1px;
+  }
+  .rec-axis {
+    gap: 1px;
+  }
+  .rec-axis i {
+    font-size: 0.55rem;
+  }
+  .rec-datum i {
+    font-size: 0.55rem;
+  }
+
+  .masthead-inner {
+    flex-wrap: wrap;
+    gap: 0 1rem;
+    padding-bottom: 0;
+  }
+
+  .station-clock {
+    text-align: right;
+    padding: 0.6rem 0;
+  }
+
+  .masthead nav {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    border-top: 1px solid var(--line-soft);
+  }
+
+  .masthead nav a {
+    padding: 0.6rem 0.9rem;
+  }
+
+  .instrument-body iframe {
+    height: 300px;
+  }
+
+  .elev-gauge {
+    min-width: 0;
+  }
+  .elev-gauge i {
+    display: none;
+  }
+}

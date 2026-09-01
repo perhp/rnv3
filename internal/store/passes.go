@@ -143,6 +143,21 @@ func (s *Store) NextScheduled(now time.Time) (*Pass, error) {
 	return p, nil
 }
 
+// ClaimPass moves a pass from scheduled to capturing only if it is still
+// scheduled, reporting whether the claim succeeded. This is the capture
+// runner's gate: a pass cancelled from the admin page (or dropped by a
+// replan) between the scheduler's read and the capture start is never run.
+func (s *Store) ClaimPass(id int64) (bool, error) {
+	res, err := s.DB.Exec(
+		`UPDATE passes SET state = ?, error_text = NULL, updated_ts = strftime('%s','now') WHERE id = ? AND state = ?`,
+		StateCapturing, id, StateScheduled)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n == 1, err
+}
+
 // SetPassState transitions a pass and stamps updated_ts.
 func (s *Store) SetPassState(id int64, state, errorText string) error {
 	_, err := s.DB.Exec(

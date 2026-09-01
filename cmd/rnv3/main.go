@@ -20,6 +20,7 @@ import (
 
 	"github.com/perhp/rnv3/internal/capture"
 	"github.com/perhp/rnv3/internal/config"
+	"github.com/perhp/rnv3/internal/livelog"
 	"github.com/perhp/rnv3/internal/process"
 	"github.com/perhp/rnv3/internal/satdumpcfg"
 	"github.com/perhp/rnv3/internal/sched"
@@ -62,12 +63,18 @@ func run(configPath string, checkOnly bool) error {
 	}
 	if checkOnly {
 		fmt.Println("config OK:", configPath)
+		for _, w := range cfg.Warnings() {
+			fmt.Println("warning:", w)
+		}
 		return nil
 	}
 
 	logger := newLogger(cfg.LogLevel)
 	slog.SetDefault(logger)
 	slog.Info("starting rnv3", "version", version, "config", configPath)
+	for _, w := range cfg.Warnings() {
+		slog.Warn(w)
+	}
 
 	dbPath := filepath.Join(cfg.Paths.DataDir, "rnv3.db")
 	if err := os.MkdirAll(cfg.Paths.DataDir, 0o755); err != nil {
@@ -88,8 +95,9 @@ func run(configPath string, checkOnly bool) error {
 
 	tleMgr := tle.NewManager(cfg.Paths.DataDir)
 	pipeline := &process.Pipeline{Prov: prov, St: st, TLEs: tleMgr}
+	live := livelog.New() // decoder output → panel terminal
 	// Note: dry_run selects the runner at startup; toggling it requires a restart.
-	var runner sched.CaptureRunner = &capture.Runner{Prov: prov, St: st, Processor: pipeline}
+	var runner sched.CaptureRunner = &capture.Runner{Prov: prov, St: st, Processor: pipeline, Live: live}
 	if cfg.Scheduling.DryRun {
 		runner = &sched.NotImplementedRunner{St: st, DryRun: true}
 	}
@@ -107,7 +115,7 @@ func run(configPath string, checkOnly bool) error {
 		}
 	}()
 
-	srv, err := web.New(prov, st, tleMgr, version)
+	srv, err := web.New(prov, st, tleMgr, live, scheduler, version)
 	if err != nil {
 		return err
 	}

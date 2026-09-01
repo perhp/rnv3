@@ -1,0 +1,124 @@
+{{define "admin_nav"}}
+<div class="tab-row">
+  <a{{if eq . "passes"}} class="active" aria-current="page"{{end}} href="/admin/passes">{{L "passes"}}</a>
+  <a{{if eq . "captures"}} class="active" aria-current="page"{{end}} href="/admin/captures">{{L "captures"}}</a>
+</div>
+{{end}}
+
+{{define "admin_status"}}
+  {{if .}}
+    {{if eq . "success"}}
+      <div class="alert alert-success" role="alert">
+        {{L "successful_delete_pass"}}
+        <button type="button" class="alert-close" aria-label="Close">&times;</button>
+      </div>
+    {{else}}
+      <div class="alert alert-error" role="alert">
+        {{.}}
+        <button type="button" class="alert-close" aria-label="Close">&times;</button>
+      </div>
+    {{end}}
+  {{end}}
+{{end}}
+
+{{define "logout"}}
+  {{if .AdminAuth}}
+    <form method="post" action="/admin/logout" class="logout-form" style="text-align: right; margin: -6px 0 10px;">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button type="submit" class="page-btn">{{L "logout"}}</button>
+    </form>
+  {{end}}
+{{end}}
+
+{{define "content"}}
+  {{template "admin_nav" "passes"}}
+  {{template "logout" .}}
+  {{template "admin_status" .Data.Status}}
+
+  <div class="caution">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5L14.5 13.5H1.5z"/><path d="M8 7v3"/><path d="M8 12v.01"/></svg>
+    <span>{{L "admin_pass_delete_warning"}}</span>
+  </div>
+
+  <div class="table-panel">
+    <table class="telemetry" id="admin-pass-list">
+      <thead>
+        <tr>
+          <th class="center"></th>
+          <th>{{L "satellite"}}</th>
+          <th class="center">{{L "pass_start"}}</th>
+          <th class="center">{{L "pass_end"}}</th>
+          <th>{{L "max_elev"}}</th>
+          <th class="center hide-sm">{{L "pass_start_azimuth"}}</th>
+          <th class="center hide-sm">{{L "travel_direction"}}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Data.Passes}}
+          {{if .DateSep}}
+            <tr class="date-separator">
+              <td colspan="7">{{.DateSep}}</td>
+            </tr>
+          {{end}}
+          <tr{{if .Inactive}} class="inactive"{{end}}>
+            <td class="center">
+              <button type="button" class="btn-delete" title="{{L "admin_delete_confirm_header"}}"
+                      data-sat-name="{{.Satellite}}"
+                      data-pass-start="{{.StartFull}}"
+                      data-pass-end="{{.EndFull}}"
+                      data-confirm-id="{{.ID}}">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4h11"/><path d="M6.5 4V2.5h3V4"/><path d="M4 4l.8 9.5h6.4L12 4"/><path d="M6.5 6.5v4.5M9.5 6.5v4.5"/></svg>
+              </button>
+            </td>
+            <td>
+              {{if .Conflict}}
+                <span class="lamp lamp-conflict" title="{{L "conflicting_pass"}}">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2.5L14.5 13.5H1.5z"/><path d="M8 7v3"/><path d="M8 12v.01"/></svg>
+                </span>
+              {{end}}
+              {{if .SatvisURL}}
+                <a href="{{.SatvisURL}}" target="satvis">{{.Satellite}}</a>
+              {{else}}
+                {{.Satellite}}
+              {{end}}
+            </td>
+            <td class="center num">{{.StartLabel}}</td>
+            <td class="center num">{{.EndLabel}}</td>
+            <td>
+              <span class="elev-gauge{{if ge .MaxElev 60}} prime{{end}}">
+                <span class="num">{{.MaxElev}}&#176;{{.EW}}</span>
+                <i style="--elev: {{.ElevPct}}%"><b></b></i>
+              </span>
+            </td>
+            <td class="center num hide-sm">{{if .StartAzimuth}}{{.StartAzimuth}}&#176;{{end}}</td>
+            <td class="center num hide-sm">{{.Direction}}</td>
+          </tr>
+        {{else}}
+          <tr>
+            <td colspan="7" class="no-passes">0 {{L "passes"}}</td>
+          </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+
+  <dialog class="confirm" id="confirm-delete" aria-labelledby="confirm-delete-label">
+    <div class="dialog-head" id="confirm-delete-label">{{L "admin_delete_confirm_header"}}</div>
+    <div class="dialog-body">
+      <dl class="readout">
+        <dt>{{L "satellite"}}</dt>
+        <dd data-field="satName"></dd>
+        <dt>{{L "pass_start"}}</dt>
+        <dd data-field="passStart"></dd>
+        <dt>{{L "pass_end"}}</dt>
+        <dd data-field="passEnd"></dd>
+      </dl>
+    </div>
+    <form method="post" action="/admin/deletePass" class="dialog-foot" id="confirm-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="id" value="" id="confirm-id">
+      <button type="button" class="btn dialog-cancel">{{L "cancel"}}</button>
+      <button type="submit" id="confirm-deletion" class="btn btn-danger">{{L "confirm"}}</button>
+    </form>
+  </dialog>
+{{end}}

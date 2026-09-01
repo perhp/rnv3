@@ -1,0 +1,17 @@
+{{define "pagination"}}
+<nav class="pager" aria-label="page">
+  {{if .PrevURL}}
+    <a class="page-btn" href="{{.PrevURL}}" aria-label="{{L "prev"}}">&laquo; {{L "prev"}}</a>
+  {{else}}
+    <span class="page-btn" aria-disabled="true">&laquo; {{L "prev"}}</span>
+  {{end}}
+
+  <span class="page-pos">{{L "page"}} {{.CurPage}} {{L "of"}} {{.PageCount}}</span>
+
+  {{if .NextURL}}
+    <a class="page-btn" href="{{.NextURL}}" aria-label="{{L "next"}}">{{L "next"}} &raquo;</a>
+  {{else}}
+    <span class="page-btn" aria-disabled="true">{{L "next"}} &raquo;</span>
+  {{end}}
+</nav>
+{{end}}

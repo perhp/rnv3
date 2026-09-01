@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" type="text/css" href="/assets/css/rn2.css">
+
+    <title>Raspberry NOAA V3</title>
+
+    <link rel="shortcut icon" href="/assets/web_img/favicon.ico" type="image/x-icon"/>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-inner">
+        <div class="station-plate">
+          <a href="/passes">
+            <div class="station-name">Raspberry NOAA V3</div>
+            <div class="station-sub">APT / LRPT Ground Station &middot; 137 MHz</div>
+          </a>
+        </div>
+        <nav>
+          <a{{if eq .Page "passes"}} class="active"{{end}} href="/passes">{{L "passes"}}</a>
+          <a{{if or (eq .Page "captures") (eq .Page "capture")}} class="active"{{end}} href="/captures?page_no=1">{{L "captures"}}</a>
+          <a{{if eq .Page "stats"}} class="active"{{end}} href="/stats">{{L "stats"}}</a>
+          <a{{if eq .Page "admin"}} class="active"{{end}} href="/admin/passes">{{L "admin"}}</a>
+        </nav>
+        <div class="station-clock">
+          <span>{{.TZ}}</span>
+          <span class="tz-offset">UTC{{.TZOffset}}</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      {{template "content" .}}
+    </main>
+
+    <script src="/assets/js/rn2.js"></script>
+    {{block "scripts" .}}{{end}}
+  </body>
+</html>

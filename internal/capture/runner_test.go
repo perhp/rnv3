@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -242,6 +243,23 @@ func TestRunnerAggregatesRunAfterTerminalState(t *testing.T) {
 	r2.Run(context.Background(), p2, cfg2.Satellites[2])
 	if proc2.seenState != store.StateFailed {
 		t.Errorf("UpdateAggregates saw state %q, want failed", proc2.seenState)
+	}
+}
+
+// TestRunnerSkipsCancelledPass: a pass cancelled between the scheduler's
+// read and the capture start must not be captured (or un-cancelled).
+func TestRunnerSkipsCancelledPass(t *testing.T) {
+	r, cfg, st, p := testRunner(t, "noaa-ok", config.Default().Satellites[2])
+	if err := st.CancelPass(p.ID); err != nil {
+		t.Fatal(err)
+	}
+	r.Run(context.Background(), p, cfg.Satellites[2])
+	state, _ := passState(t, st, p.ID)
+	if state != store.StateCancelled {
+		t.Fatalf("state = %s, want cancelled (runner must not claim a cancelled pass)", state)
+	}
+	if _, err := os.Stat(filepath.Join(cfg.Paths.Work, "pass-"+strconv.FormatInt(p.ID, 10))); !os.IsNotExist(err) {
+		t.Error("work dir created for a pass that must not run")
 	}
 }
 

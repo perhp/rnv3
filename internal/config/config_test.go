@@ -3,6 +3,7 @@ package config
 import (
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -82,5 +83,21 @@ func TestRestartOnlyFieldsChanged(t *testing.T) {
 	fresh2.Notifications.Telegram.Enabled = true
 	if got := RestartOnlyFieldsChanged(old, fresh2); len(got) != 0 {
 		t.Errorf("reloadable changes flagged: %v", got)
+	}
+}
+
+func TestAdminLockWithoutHashWarnsButLoads(t *testing.T) {
+	cfg := Default()
+	cfg.Web.Admin.Enabled = true
+	cfg.Web.Admin.PasswordHash = ""
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("an upgraded config with admin lock but no hash must still load: %v", err)
+	}
+	if w := cfg.Warnings(); len(w) != 1 || !strings.Contains(w[0], "password_hash") {
+		t.Errorf("warnings = %v", w)
+	}
+	cfg.Web.Admin.PasswordHash = "$2a$10$x"
+	if w := cfg.Warnings(); len(w) != 0 {
+		t.Errorf("unexpected warnings: %v", w)
 	}
 }

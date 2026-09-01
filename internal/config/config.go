@@ -247,6 +247,12 @@ type Web struct {
 	TLS         WebTLS      `yaml:"tls"`
 	Admin       WebAdmin    `yaml:"admin"`
 	Instruments Instruments `yaml:"instruments"`
+	// Panel presentation (RN2: CAPTURES_PER_PAGE, ADMIN_CAPTURES_PER_PAGE,
+	// DATE_FORMAT, DATETIME_FORMAT). Formats are Go layouts.
+	CapturesPerPage      int    `yaml:"captures_per_page"`
+	AdminCapturesPerPage int    `yaml:"admin_captures_per_page"`
+	DateFormat           string `yaml:"date_format"`
+	DateTimeFormat       string `yaml:"datetime_format"`
 }
 
 type WebTLS struct {
@@ -257,6 +263,8 @@ type WebTLS struct {
 }
 
 type WebAdmin struct {
+	// Enabled locks the admin pages behind a login (RN2: lock_admin_page).
+	// When false the admin pages are open, as on a trusted LAN.
 	Enabled  bool   `yaml:"enabled"`
 	Username string `yaml:"username"`
 	// PasswordHash is a bcrypt hash; generate with `rnv3 -hash-password`.
@@ -351,11 +359,15 @@ func Default() *Config {
 		Web: Web{
 			Listen: ":80",
 			TLS:    WebTLS{Listen: ":443"},
-			Admin:  WebAdmin{Enabled: true, Username: "admin"},
+			Admin:  WebAdmin{Enabled: false, Username: "admin"},
 			Instruments: Instruments{
 				Satvis:          true,
 				SolarTerminator: true,
 			},
+			CapturesPerPage:      18,
+			AdminCapturesPerPage: 100,
+			DateFormat:           "01/02/2006",
+			DateTimeFormat:       "01/02/2006 15:04:05",
 		},
 		LogLevel: "info",
 	}
@@ -446,6 +458,12 @@ func (c *Config) Validate() error {
 	if c.Web.TLS.Enabled && (c.Web.TLS.CertFile == "" || c.Web.TLS.KeyFile == "") {
 		add("web.tls: cert_file and key_file are required when TLS is enabled")
 	}
+	if c.Web.CapturesPerPage < 1 || c.Web.AdminCapturesPerPage < 1 {
+		add("web.captures_per_page and web.admin_captures_per_page must be >= 1")
+	}
+	if c.Web.DateFormat == "" || c.Web.DateTimeFormat == "" {
+		add("web.date_format and web.datetime_format must not be empty")
+	}
 	switch strings.ToLower(c.LogLevel) {
 	case "debug", "info", "warn", "error":
 	default:
@@ -475,4 +493,15 @@ func receiverNames() []string {
 		names = append(names, k)
 	}
 	return names
+}
+
+// Warnings reports settings that are legal but almost certainly not what the
+// operator wants. They are logged at startup rather than rejected, so an
+// upgrade never leaves the station unable to start.
+func (c *Config) Warnings() []string {
+	var w []string
+	if c.Web.Admin.Enabled && (c.Web.Admin.Username == "" || c.Web.Admin.PasswordHash == "") {
+		w = append(w, "web.admin.enabled is true but username/password_hash is not set: the admin pages are locked and no login can succeed until you set password_hash (rnv3 -hash-password) or disable the lock")
+	}
+	return w
 }
