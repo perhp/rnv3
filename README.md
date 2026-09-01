@@ -46,7 +46,7 @@ your PC without ever opening a terminal on the Pi.
 
 **On your PC** (Windows; macOS/Linux work too with the same commands)
 
-- [Go](https://go.dev/dl/) 1.22 or newer, to build the tools once
+- [Go](https://go.dev/dl/) 1.27 or newer, to build the tools once (an older 1.21+ Go fetches it automatically)
 - Git, to clone this repository
 
 That's all. SatDump and the SDR drivers are installed on the Pi by rnv3 itself.
