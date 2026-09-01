@@ -64,6 +64,13 @@ type CADUContributor interface {
 	ContributeCADU(ctx context.Context, path string) error
 }
 
+// PassPublisher receives pass outcomes for the event webhooks
+// (publish.Publisher).
+type PassPublisher interface {
+	PassDecoded(passID int64)
+	PassFailed(passID int64)
+}
+
 // notifyTimeout bounds one pass's pushes (many images × slow APIs).
 const notifyTimeout = 10 * time.Minute
 
@@ -91,6 +98,8 @@ type Runner struct {
 	Notify PassNotifier
 	// Community uploads CADU recordings when enabled in config. nil disables.
 	Community CADUContributor
+	// Publish queues pass events for the webhook receivers. nil disables.
+	Publish PassPublisher
 
 	pushes sync.WaitGroup
 	// Exec substitutes the process constructor in tests; nil means the real
@@ -191,6 +200,9 @@ func (r *Runner) Run(ctx context.Context, p store.Pass, sat config.Satellite) {
 		log.Info("pass decoded", "images", len(images), "daylight", daylight, "max_snr", maxSNR)
 		r.live(fmt.Sprintf("=== pass decoded: %d images", len(images)))
 		r.cleanupWorkDir(workDir, true)
+		if r.Publish != nil {
+			r.Publish.PassDecoded(p.ID)
+		}
 		r.push(notify.PassEvent{
 			PassID: p.ID, Satellite: sat.Name, SatType: sat.Type, StartTS: p.StartTS, EndTS: p.EndTS,
 			MaxElevation: p.MaxElevation, Direction: directionLabel(p.Direction), Side: sideLabel(p.AzimuthAtMax),
@@ -419,6 +431,9 @@ func (r *Runner) fail(id int64, reason string) {
 	r.live("=== pass failed: " + reason)
 	if err := r.St.SetPassState(id, store.StateFailed, reason); err != nil {
 		slog.Error("cannot mark pass failed", "pass_id", id, "err", err)
+	}
+	if r.Publish != nil {
+		r.Publish.PassFailed(id)
 	}
 }
 

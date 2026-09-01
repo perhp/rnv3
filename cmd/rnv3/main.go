@@ -24,6 +24,7 @@ import (
 	"github.com/perhp/rnv3/internal/livelog"
 	"github.com/perhp/rnv3/internal/notify"
 	"github.com/perhp/rnv3/internal/process"
+	"github.com/perhp/rnv3/internal/publish"
 	"github.com/perhp/rnv3/internal/satdumpcfg"
 	"github.com/perhp/rnv3/internal/sched"
 	"github.com/perhp/rnv3/internal/store"
@@ -39,6 +40,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	checkOnly := flag.Bool("check", false, "validate the config and exit")
 	hashPassword := flag.Bool("hash-password", false, "read a password from stdin and print its bcrypt hash for web.admin.password_hash")
+	publishTest := flag.Bool("publish-test", false, "send a test station.stats event to every publish endpoint and exit")
 	flag.Parse()
 
 	if *showVersion {
@@ -52,13 +54,13 @@ func main() {
 		}
 		return
 	}
-	if err := run(*configPath, *checkOnly); err != nil {
+	if err := run(*configPath, *checkOnly, *publishTest); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath string, checkOnly bool) error {
+func run(configPath string, checkOnly, publishTest bool) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
@@ -105,11 +107,22 @@ func run(configPath string, checkOnly bool) error {
 	if cfg.Scheduling.DryRun {
 		runner = &sched.NotImplementedRunner{St: st, DryRun: true}
 	}
-	housekeeping := &jobs.Jobs{Prov: prov, St: st, Notify: notifier, StateDir: cfg.Paths.DataDir}
+	publisher := publish.New(prov, st, version)
+	if publishTest {
+		for _, line := range publisher.Test(context.Background()) {
+			fmt.Println(line)
+		}
+		return nil
+	}
+	captureRunner.Publish = publisher
+	process.OnCaptureRemoved = publisher.PassDeleted
+	housekeeping := &jobs.Jobs{Prov: prov, St: st, Notify: &alerter{notifier, publisher}, StateDir: cfg.Paths.DataDir}
 	jobsCtx, cancelJobs := context.WithCancel(context.Background())
 	defer cancelJobs()
 	go housekeeping.Run(jobsCtx)
+	go publisher.Run(jobsCtx)
 	scheduler := sched.New(prov, st, tleMgr, runner)
+	scheduler.OnPlanUpdated = publisher.SendSchedule
 	schedCtx, cancelSched := context.WithCancel(context.Background())
 	defer cancelSched()
 	schedDone := make(chan struct{})
@@ -208,6 +221,8 @@ func run(configPath string, checkOnly bool) error {
 			syncSatdumpCfg(prov)
 			slog.Info("config reloaded, replanning passes")
 			scheduler.Replan()
+			publisher.Backfill() // a newly added endpoint gets recent history
+			publisher.Kick()
 		case err := <-errCh:
 			return err
 		}
@@ -261,4 +276,20 @@ func newLogger(level string) *slog.Logger {
 		lvl = slog.LevelInfo
 	}
 	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: lvl}))
+}
+
+// alerter fans watchdog alerts out to the notification channels and the
+// event webhooks; daily summaries go to the channels only.
+type alerter struct {
+	n *notify.Notifier
+	p *publish.Publisher
+}
+
+func (a *alerter) Alert(ctx context.Context, check, message string) {
+	a.n.Alert(ctx, check, message)
+	a.p.Alert(ctx, check, message)
+}
+
+func (a *alerter) DailySummary(ctx context.Context, annotation string, files []string) {
+	a.n.DailySummary(ctx, annotation, files)
 }

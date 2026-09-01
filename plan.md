@@ -303,6 +303,11 @@ binary, unit file, udev rules, directories, SatDump.
   `rnv3-setup` asks for URL + secret. The permi website gets a receiver route
   (`/api/station/webhook`) that maps the events onto its existing Supabase tables (+ satellite
   name, SNR/frame stats, status columns), replacing the `permi-images-syncing` poller.
+  (Code complete 2026-09-01: `internal/publish` + `internal/hostinfo`, outbox migration 002,
+  hooks in runner/scheduler/RemoveCapture/watchdog, `rnv3 -publish-test`, wizard "Event feed"
+  section; permi: `app/api/station/webhook/route.ts`, `supabase/rnv3.sql`, decoded-only
+  listings, satellite name column. Exit: run `supabase/rnv3.sql`, set `STATION_TOKEN`, point
+  rnv3 at permi via Reconfigure, watch a pass land; then archive permi-images-syncing.)
 
 Development stays on Windows; every milestone validates on the Pi ("raspinoaa") — the deploy
 artifact is one binary, so the exec-bit / git-pull pain of the old flow disappears.

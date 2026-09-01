@@ -163,6 +163,15 @@ notifications:
     smtp_user: ""
     smtp_password: ""
 
+publish:                           # push station events to your own backend (docs/webhooks.md)
+  backfill_days: 31                # on start, resend decoded passes newer than this
+  endpoints: []
+  # - name: my-site
+  #   url: https://example.org/api/station/webhook
+  #   token: change-me              # sent as "Authorization: Bearer change-me"
+  #   events: []                    # empty = all; or e.g. [pass.decoded, pass.image, schedule.updated]
+  #   images: true                  # also send the image files (pass.image)
+
 watchdog:
   enabled: true
   max_hours_without_capture: 48

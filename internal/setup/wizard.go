@@ -261,6 +261,48 @@ func (w *Wizard) notifications(cfg *config.Config) {
 			n.QualityGate.MinSNR = p.AskFloat("notifications.quality_gate.min_snr", "  Minimum peak SNR (dB, 0 = ignore)", n.QualityGate.MinSNR)
 		}
 	}
+	w.publishing(cfg)
+}
+
+// publishing configures the event webhook receivers (docs/webhooks.md):
+// every pass with its images, the schedule and station health, pushed to
+// the operator's own backend.
+func (w *Wizard) publishing(cfg *config.Config) {
+	p := w.P
+	p.Say("")
+	p.Say("── Event feed ──")
+	p.Say("rnv3 can push every pass (with images), the schedule and station health to your own")
+	p.Say("website or backend as webhook events — see docs/webhooks.md for the format.")
+	existing := cfg.Publish.Endpoints
+	if !p.AskBool("publish.enabled", "Send station events to a webhook receiver", len(existing) > 0) {
+		cfg.Publish.Endpoints = nil
+		return
+	}
+	var endpoints []config.PublishEndpoint
+	for i := 0; ; i++ {
+		var cur config.PublishEndpoint
+		if i < len(existing) {
+			cur = existing[i]
+		} else {
+			cur = config.PublishEndpoint{Name: fmt.Sprintf("receiver-%d", i+1), Images: true}
+		}
+		key := fmt.Sprintf("publish.endpoint.%d.", i+1)
+		if i < len(existing) && !p.AskBool(key+"keep", fmt.Sprintf("Keep receiver %q (%s)", cur.Name, cur.URL), true) {
+			continue
+		}
+		cur.Name = p.AskRequired(key+"name", "  Receiver name", cur.Name)
+		cur.URL = p.AskRequired(key+"url", "  Receiver URL (https://…)", cur.URL)
+		cur.Token = w.secretRequired(key+"token", "  Secret the receiver checks (sent as a bearer token)", cur.Token)
+		cur.Images = p.AskBool(key+"images", "  Send the image files too (pass.image events)", cur.Images)
+		endpoints = append(endpoints, cur)
+		if i+1 >= len(existing) && !p.AskBool(key+"another", "Add another receiver", false) {
+			break
+		}
+	}
+	cfg.Publish.Endpoints = endpoints
+	if len(endpoints) > 0 {
+		cfg.Publish.BackfillDays = p.AskInt("publish.backfill_days", "On start, resend decoded passes newer than (days, 0 = none)", cfg.Publish.BackfillDays)
+	}
 }
 
 func (w *Wizard) daily(cfg *config.Config) {

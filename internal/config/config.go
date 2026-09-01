@@ -59,6 +59,7 @@ type Config struct {
 	Retention     Retention     `yaml:"retention"`
 	Daily         Daily         `yaml:"daily"`
 	Notifications Notifications `yaml:"notifications"`
+	Publish       Publish       `yaml:"publish"`
 	Watchdog      Watchdog      `yaml:"watchdog"`
 	Community     Community     `yaml:"community"`
 	Web           Web           `yaml:"web"`
@@ -234,6 +235,42 @@ type Email struct {
 	SMTPPassword string `yaml:"smtp_password"`
 }
 
+// Publish pushes station events to HTTP receivers (docs/webhooks.md).
+type Publish struct {
+	// BackfillDays: on start, decoded passes newer than this that an
+	// endpoint has not received yet are (re)sent.
+	BackfillDays int               `yaml:"backfill_days"`
+	Endpoints    []PublishEndpoint `yaml:"endpoints"`
+}
+
+// PublishEndpoint is one receiver.
+type PublishEndpoint struct {
+	Name   string   `yaml:"name"`
+	URL    string   `yaml:"url"`
+	Token  string   `yaml:"token"`  // sent as a bearer token
+	Events []string `yaml:"events"` // empty = every event
+	Images bool     `yaml:"images"` // send pass.image events (the files)
+}
+
+// Wants reports whether the endpoint subscribes to an event.
+func (e PublishEndpoint) Wants(event string) bool {
+	if event == "pass.image" && !e.Images {
+		return false
+	}
+	if len(e.Events) == 0 {
+		return true
+	}
+	for _, ev := range e.Events {
+		if ev == event {
+			return true
+		}
+	}
+	return false
+}
+
+// PublishEvents is every event rnv3 emits.
+var PublishEvents = []string{"pass.decoded", "pass.image", "pass.failed", "pass.deleted", "schedule.updated", "station.stats", "station.alert"}
+
 type Watchdog struct {
 	Enabled                bool `yaml:"enabled"`
 	MaxHoursWithoutCapture int  `yaml:"max_hours_without_capture"`
@@ -354,6 +391,7 @@ func Default() *Config {
 			Pushover: Pushover{Priority: 0},
 			Email:    Email{SMTPPort: 587},
 		},
+		Publish: Publish{BackfillDays: 31},
 		Watchdog: Watchdog{
 			Enabled:                true,
 			MaxHoursWithoutCapture: 48,
@@ -474,6 +512,31 @@ func (c *Config) Validate() error {
 	}
 	if n.Email.Enabled && (n.Email.To == "" || n.Email.From == "" || n.Email.SMTPHost == "") {
 		add("notifications.email: to, from and smtp_host are required when enabled")
+	}
+	if c.Publish.BackfillDays < 0 {
+		add("publish.backfill_days must be >= 0")
+	}
+	names := map[string]bool{}
+	for i, ep := range c.Publish.Endpoints {
+		if ep.Name == "" {
+			add("publish.endpoints[%d]: name is required", i)
+		}
+		if names[ep.Name] {
+			add("publish.endpoints[%d]: duplicate name %q", i, ep.Name)
+		}
+		names[ep.Name] = true
+		if !strings.HasPrefix(ep.URL, "http://") && !strings.HasPrefix(ep.URL, "https://") {
+			add("publish.endpoints[%d] (%s): url must start with http:// or https://", i, ep.Name)
+		}
+		for _, ev := range ep.Events {
+			known := false
+			for _, k := range PublishEvents {
+				known = known || k == ev
+			}
+			if !known {
+				add("publish.endpoints[%d] (%s): unknown event %q (known: %s)", i, ep.Name, ev, strings.Join(PublishEvents, ", "))
+			}
+		}
 	}
 	if c.Community.ContributeComposites && c.Community.URL == "" {
 		add("community.url is required when contribute_composites is enabled")

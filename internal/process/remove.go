@@ -12,6 +12,10 @@ import (
 // removeFile is a seam for tests that need a deletion to fail.
 var removeFile = os.Remove
 
+// OnCaptureRemoved, when set, is told about every capture whose rows were
+// deleted (the event webhooks publish pass.deleted from it).
+var OnCaptureRemoved func(passID int64)
+
 // RemoveCapture deletes a pass's files (every registered image and
 // thumbnail, plus the website thumbnail) and then its database rows. Used by
 // the admin page and by retention pruning.
@@ -51,5 +55,11 @@ func RemoveCapture(st *store.Store, imagesDir, thumbsDir string, id int64) error
 	if len(failures) > 0 {
 		return fmt.Errorf("pass %d kept: %d file(s) could not be deleted: %w", id, len(failures), errors.Join(failures...))
 	}
-	return st.DeletePass(id)
+	if err := st.DeletePass(id); err != nil {
+		return err
+	}
+	if OnCaptureRemoved != nil {
+		OnCaptureRemoved(id)
+	}
+	return nil
 }

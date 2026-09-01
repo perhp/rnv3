@@ -464,3 +464,49 @@ func TestReconfigureOffersPortMoveWhenNginxGone(t *testing.T) {
 		t.Errorf("port move offered while nginx holds :80 (listen=%s)", cfg.Web.Listen)
 	}
 }
+
+func TestPublishSection(t *testing.T) {
+	answers := map[string]string{"station.name": "pi", "sdr.type": "rtlsdr", "satellites.enabled": "METEOR-M2 3", "web.admin.enabled": "false",
+		"section.notifications": "true", "notifications.webhook.enabled": "false", "notifications.discord.enabled": "false",
+		"notifications.telegram.enabled": "false", "notifications.pushover.enabled": "false", "notifications.email.enabled": "false",
+		"publish.enabled": "true", "publish.endpoint.1.name": "permi", "publish.endpoint.1.url": "https://permi.dk/api/station/webhook",
+		"publish.endpoint.1.token": "SECRET", "publish.endpoint.1.images": "true", "publish.endpoint.1.another": "false", "publish.backfill_days": "14",
+		"section.daily": "false", "section.panel": "false", "section.advanced": "false"}
+	p, out := scripted(answers)
+	w := &Wizard{P: p, Probe: &Probe{Hostname: "pi"}}
+	cfg, err := w.Configure(config.Default(), ModeFresh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Publish.Endpoints) != 1 || cfg.Publish.Endpoints[0].Token != "SECRET" || cfg.Publish.Endpoints[0].URL != "https://permi.dk/api/station/webhook" ||
+		!cfg.Publish.Endpoints[0].Images || cfg.Publish.BackfillDays != 14 {
+		t.Errorf("publish = %+v", cfg.Publish)
+	}
+	if strings.Contains(out.String(), "SECRET") {
+		t.Error("webhook secret echoed")
+	}
+	text, _ := RenderConfig(cfg)
+	if !strings.Contains(Redacted(text), "token: ********") {
+		t.Error("token not redacted in the preview")
+	}
+	back, err := ParseConfig(string(text))
+	if err != nil || len(back.Publish.Endpoints) != 1 {
+		t.Errorf("round trip: %v %+v", err, back.Publish)
+	}
+	// Reconfigure: an existing endpoint can be dropped.
+	answers["publish.endpoint.1.keep"] = "false"
+	answers["publish.endpoint.2.name"] = "other"
+	answers["publish.endpoint.2.url"] = "https://other.example/hook"
+	answers["publish.endpoint.2.token"] = "T2"
+	answers["publish.endpoint.2.images"] = "false"
+	answers["publish.endpoint.2.another"] = "false"
+	p, _ = scripted(answers)
+	w = &Wizard{P: p, Probe: &Probe{Hostname: "pi"}}
+	cfg2, err := w.Configure(cfg, ModeReconfigure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg2.Publish.Endpoints) != 1 || cfg2.Publish.Endpoints[0].Name != "other" || cfg2.Publish.Endpoints[0].Images {
+		t.Errorf("reconfigured publish = %+v", cfg2.Publish)
+	}
+}

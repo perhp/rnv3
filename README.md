@@ -177,6 +177,11 @@ n8n, Node-RED), Discord, Telegram, Pushover and email. The *quality gate* skips 
 (low elevation or SNR) for the social channels; the webhook always fires. A daily
 *best-of-day* summary with mosaics and timelapses is optional.
 
+**Event feed.** Everything the station does can be pushed to your own website or backend as
+webhook events — each decoded pass with its image files, failed passes, the upcoming schedule,
+a health sample every five minutes, watchdog alerts — with a bearer secret you choose. The
+format is in [docs/webhooks.md](docs/webhooks.md); `rnv3 -publish-test` checks a receiver.
+
 **Watchdog.** Once an hour rnv3 checks that captures are still happening, passes are not all
 failing, disk is not full, passes are scheduled and (for RTL-SDR) the dongle is still on USB —
 and alerts through the same channels, at most once a day per problem.

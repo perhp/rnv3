@@ -28,6 +28,10 @@ type Scheduler struct {
 	tles   *tle.Manager
 	runner CaptureRunner
 
+	// OnPlanUpdated, when set, runs after every successful replan (the
+	// event webhooks publish schedule.updated from it).
+	OnPlanUpdated func(ctx context.Context)
+
 	replanCh chan struct{}
 }
 
@@ -164,6 +168,9 @@ func (s *Scheduler) plan(ctx context.Context) error {
 	}
 	slog.Info("pass plan updated", "scheduled", scheduled, "skipped", skipped,
 		"window_days", cfg.Scheduling.DaysAhead)
+	if s.OnPlanUpdated != nil {
+		s.OnPlanUpdated(ctx)
+	}
 	return nil
 }
 
