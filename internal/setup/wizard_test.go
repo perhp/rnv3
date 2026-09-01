@@ -441,3 +441,26 @@ func TestSecretsNotEchoedInReconfigure(t *testing.T) {
 		t.Errorf("secrets not preserved on Enter: %+v", cfg.Notifications)
 	}
 }
+
+func TestReconfigureOffersPortMoveWhenNginxGone(t *testing.T) {
+	base := config.Default()
+	base.Web.Listen = ":8080"
+	answers := map[string]string{"station.name": "pi", "sdr.type": "rtlsdr", "satellites.enabled": "METEOR-M2 3", "web.admin.enabled": "false",
+		"section.notifications": "false", "section.daily": "false", "section.panel": "false", "section.advanced": "false"}
+	p, _ := scripted(answers) // Enter → default yes
+	w := &Wizard{P: p, Probe: &Probe{Hostname: "pi", NginxActive: false}}
+	cfg, err := w.Configure(base, ModeReconfigure)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Web.Listen != ":80" {
+		t.Errorf("listen = %s, want :80", cfg.Web.Listen)
+	}
+	// With nginx still active the question is not asked and :8080 stays.
+	p, out := scripted(answers)
+	w = &Wizard{P: p, Probe: &Probe{Hostname: "pi", NginxActive: true}}
+	cfg, _ = w.Configure(base, ModeReconfigure)
+	if cfg.Web.Listen != ":8080" || strings.Contains(out.String(), "move it to the standard port") {
+		t.Errorf("port move offered while nginx holds :80 (listen=%s)", cfg.Web.Listen)
+	}
+}

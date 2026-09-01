@@ -159,6 +159,15 @@ func (w *Wizard) Configure(base *config.Config, mode Mode) (*config.Config, erro
 		if cfg.Web.Listen == "" || cfg.Web.Listen == ":8080" {
 			cfg.Web.Listen = ":80"
 		}
+	case ModeReconfigure:
+		// A panel left on :8080 after RN2 is gone is the side-by-side
+		// setting outliving its reason.
+		if cfg.Web.Listen == ":8080" && !w.Probe.NginxActive {
+			p.Say("")
+			if p.AskBool("web.move_to_80", "The panel is on :8080 and nginx is not running — move it to the standard port 80", true) {
+				cfg.Web.Listen = ":80"
+			}
+		}
 	}
 
 	p.Say("")

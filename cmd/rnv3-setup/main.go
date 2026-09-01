@@ -262,6 +262,10 @@ func cutover(p *setup.Prompter, in *setup.Installer, probe *setup.Probe) error {
 	if cfg.Scheduling.DryRun {
 		p.Say("The current config has scheduling.dry_run: true; it is switched off only after you confirm below.")
 	}
+	movePanel := cfg.Web.Listen == ":8080"
+	if movePanel {
+		p.Say("The panel is on :8080 (side-by-side); it moves to :80 once nginx is retired.")
+	}
 	if err := in.CutoverDryRun(); err != nil && !cfg.Scheduling.DryRun {
 		return err
 	}
@@ -275,8 +279,11 @@ func cutover(p *setup.Prompter, in *setup.Installer, probe *setup.Probe) error {
 	if probe.AtJobs > 0 {
 		kill = p.AskBool("cutover.kill", "If RN2 is mid-capture, terminate it instead of waiting (up to 45 min)", false)
 	}
-	if cfg.Scheduling.DryRun {
+	if cfg.Scheduling.DryRun || movePanel {
 		cfg.Scheduling.DryRun = false
+		if movePanel {
+			cfg.Web.Listen = ":80"
+		}
 		yamlText, err := setup.RenderConfig(cfg)
 		if err != nil {
 			return err
@@ -294,7 +301,7 @@ func cutover(p *setup.Prompter, in *setup.Installer, probe *setup.Probe) error {
 	}
 	p.Say("")
 	if ok {
-		p.Say("==> Cutover complete: rnv3 owns the SDR. Panel: %s", setup.PanelURL(in.C.Host, ":80"))
+		p.Say("==> Cutover complete: rnv3 owns the SDR. Panel: %s", setup.PanelURL(in.C.Host, cfg.Web.Listen))
 	} else {
 		p.Say("==> Cutover ran but rnv3 has not planned passes yet — check journalctl -u rnv3 -f")
 	}

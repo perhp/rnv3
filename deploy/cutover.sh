@@ -152,9 +152,12 @@ fi
 
 # ---------------------------------------------------------------------------
 step "web.listen"
-if grep -qE '^\s*listen:\s*":8080"' /etc/rnv3/config.yaml; then
+# The value may be bare, single- or double-quoted depending on who wrote the
+# file (rnv3-setup's YAML encoder leaves it bare). Only the first listen: is
+# the HTTP one; the TLS block's comes later and is left alone.
+if grep -qE "^[[:space:]]*listen:[[:space:]]*[\"']?:8080[\"']?[[:space:]]*$" /etc/rnv3/config.yaml; then
   echo "    moving web.listen from :8080 (side-by-side) back to :80"
-  run "sed -i -E '0,/^(\s*)listen:\s*\":8080\"/s//\1listen: \":80\"/' /etc/rnv3/config.yaml"
+  run "sed -i -E \"0,/^([[:space:]]*)listen:[[:space:]]*[\\\"']?:8080[\\\"']?[[:space:]]*\$/s//\\1listen: \\\":80\\\"/\" /etc/rnv3/config.yaml"
 fi
 
 step "starting rnv3"
