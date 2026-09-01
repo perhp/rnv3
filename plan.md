@@ -15,7 +15,8 @@ Scope decisions (agreed 2026-08-31):
 - **Push channels kept:** generic webhook, Discord, Telegram, Pushover, email.
 - **Data migration:** one-time importer for the existing `panel.db` + `/srv/images`.
 - **Web UI:** port the current ops-console/terminal design 1:1 (no redesign).
-- **Repo:** this new repo; the old repo stays as the running reference until rnv3 is validated on the Pi.
+- **Repo:** this new repo. rnv3 was validated against RN2 on the Pi and cut over on
+  2026-09-01; RN2 is retired and this repo is the only station code.
 
 Why Go: static single binary cross-compiled from Windows in one command
 (`GOOS=linux GOARCH=arm64 go build`) and deployed by copying one file over SSH — no venv, no
@@ -206,26 +207,26 @@ binary, unit file, udev rules, directories, SatDump.
 - [x] **M0 — Skeleton**: repo, config loader with current `settings.yml` values mapped over,
   SQLite store + migrations, systemd unit, cross-compile + deploy script to the Pi.
   *Exit: daemon runs on raspinoaa, serves a hello/status page.*
-  (Code complete + local smoke test 2026-08-31; on-Pi run deferred by choice.)
-- [ ] **M1 — Predict & schedule**: TLE fetch/validate, SGP4 passes, sun gates, overlap resolver,
+  (Code complete + local smoke test 2026-08-31; running on raspinoaa since 2026-09-01.)
+- [x] **M1 — Predict & schedule**: TLE fetch/validate, SGP4 passes, sun gates, overlap resolver,
   plan visible in DB. *Exit: predicted passes match the current system's schedule within seconds —
   run both side by side (rnv3 in dry-run mode, no SDR contention).*
-  (Code complete 2026-08-31: live Celestrak fetch + 7-day plan verified locally; the
-  side-by-side comparison against RN2 happens when we first deploy to the Pi.)
-- [ ] **M2 — Capture & decode**: SatDump runner with per-SDR profiles, work dirs, state machine,
+  (Code complete 2026-08-31: live Celestrak fetch + 7-day plan verified locally; side-by-side
+  comparison against RN2 done on the Pi 2026-09-01 — same passes, seconds apart.)
+- [x] **M2 — Capture & decode**: SatDump runner with per-SDR profiles, work dirs, state machine,
   SNR/frame stats, ramfs logic. *Exit: a real NOAA and a real Meteor pass decoded end-to-end by
   rnv3 (old system paused during the test).*
   (Code complete 2026-08-31: arg builder for the full SDR matrix, per-pass work dirs, uniform
   watchdog deadline, Go CADU parser, live SNR parsing, audio retention; end-to-end tested against
-  a fake SatDump. Real-pass validation happens at first Pi deploy, together with M1's comparison.)
-- [ ] **M3 — Processing**: rename/flip/dedup rules ported exactly (they encode hard-won
+  a fake SatDump. Real NOAA and Meteor passes decoded end-to-end on the Pi 2026-09-01.)
+- [x] **M3 — Processing**: rename/flip/dedup rules ported exactly (they encode hard-won
   SatDump-output knowledge), thumbnails, polar SVGs, sky map, mosaics/timelapses.
   *Exit: artifacts visually match current output for the same pass.*
   (Code complete 2026-09-01: rules ported line-by-line from the receive scripts, pure-Go
   imaging, images registered in DB, NOAA website thumbnail fixed, polar/sky map as SVG,
   satdump_cfg.json generated from the VERBATIM embedded .j2 via a strict mini-renderer.
-  Visual-parity check against RN2 output happens at first Pi deploy.)
-- [ ] **M4 — Web UI port**: templates + API + SSE terminal + admin + RSS; the migration importer,
+  Visual parity against RN2 output confirmed on the Pi 2026-09-01.)
+- [x] **M4 — Web UI port**: templates + API + SSE terminal + admin + RSS; the migration importer,
   so the UI is tested against real history. *Exit: feature-parity walkthrough against the PHP panel.*
   (Code complete 2026-09-01: `internal/web` serves the ops-console 1:1 — `rn2.css`/`rn2.js`
   carried over, Twig → `html/template`, RN2's URLs preserved (`/passes`, `/captures?page_no=`,
@@ -235,9 +236,9 @@ binary, unit file, udev rules, directories, SatDump.
   login form + bcrypt + HttpOnly session + CSRF, deletes are POST; "delete pass" = cancelled
   state (survives replans) + scheduler wake. `tools/migrate` imports panel.db + /srv/images,
   keeping RN2 capture ids so old capture URLs resolve, and redraws the sky map. Walked through
-  locally against a migrated fixture; the parity walkthrough against the live PHP panel happens
-  at first Pi deploy, with real history.)
-- [ ] **M5 — Notifications, watchdog, retention, best-of-day.**
+  locally against a migrated fixture; parity walkthrough against the live PHP panel done on the Pi
+  2026-09-01 with the migrated real history.)
+- [x] **M5 — Notifications, watchdog, retention, best-of-day.**
   (Code complete 2026-09-01: `internal/notify` ports the kept push processors — webhook JSON
   with RN2's keys (+ `max_snr`/`page_url`), Discord multipart per image on the NOAA/Meteor
   webhook, Telegram `sendPhoto` with the caption on the first image (GIFs as documents),
@@ -248,9 +249,9 @@ binary, unit file, udev rules, directories, SatDump.
   watchdog (same five checks, RTL-SDR probed via sysfs, 24 h re-alert suppression persisted in
   `data_dir/watchdog-state.json`), best-of-day at `daily.push_time` (22:30), retention pruning
   (`prune_images_older_than_days` now actually deletes captures — files + rows — and old daily
-  artifacts; stale work dirs swept after 7 days). Real-channel delivery is verified at first Pi
-  deploy with the user's tokens.)
-- [ ] **M6 — Cutover**: install script hardening, disable old cron/at jobs, run rnv3 as the sole
+  artifacts; stale work dirs swept after 7 days). Real-channel delivery verified on the Pi
+  2026-09-01 with the live tokens.)
+- [x] **M6 — Cutover**: install script hardening, disable old cron/at jobs, run rnv3 as the sole
   owner of the SDR for a week, then retire the old stack on the Pi.
   (Tooling complete 2026-09-01: `deploy/install.sh` now provisions everything RN2's Ansible roles
   did — apt deps, SatDump 1.2.2 and osmocom rtl-sdr source builds when missing, kernel-module
@@ -259,10 +260,10 @@ binary, unit file, udev rules, directories, SatDump.
   disables nginx/php-fpm, imports panel.db, moves the panel to :80 and starts rnv3;
   `deploy/deploy.ps1` ships rnv3 + rnv3-migrate; the README is the runbook: side-by-side
   in dry-run on :8080 → real passes with RN2 paused → cutover → a week solo → retire RN2.
-  **Remaining: the on-Pi run itself** — first deploy, the M1–M5 validations against the live
-  station, then cutover.)
+  Done 2026-09-01: deployed, validated M1–M5 against the live station, cut over; rnv3 is
+  the sole owner of the SDR and RN2's cron/at/nginx/php-fpm are gone.)
 
-- [ ] **M7 — `rnv3-setup`: interactive installer that drives the Pi over SSH.** Decided
+- [x] **M7 — `rnv3-setup`: interactive installer that drives the Pi over SSH.** Decided
   2026-09-01 (user choices): runs on the Windows PC; own SSH client (`golang.org/x/crypto/ssh`,
   password auth, host key TOFU in `%APPDATA%\rnv3\known_hosts`); remembers host+user in
   `%APPDATA%\rnv3\setup.json`, never the password; plain `ssh-keygen`-style prompts with defaults in
@@ -291,9 +292,10 @@ binary, unit file, udev rules, directories, SatDump.
   passwordless, pty + fed password otherwise), history import, journal wait, cutover with
   typed confirmation, reconfigure with reload-vs-restart. `deploy/release.ps1` builds the
   arm64 payload and embeds it: `dist\rnv3-setup.exe` ≈ 30 MB. Tested against an in-process
-  SSH server. The exit criterion — a run against the real Pi — is the same on-Pi work as M6.)
+  SSH server. Exit met 2026-09-01: the side-by-side install and the cutover of the real Pi were
+  driven entirely from the tool.)
 
-- [ ] **M8 — Event webhooks (retires permi-images-syncing).** Decided 2026-09-01. rnv3 pushes
+- [x] **M8 — Event webhooks (retires permi-images-syncing).** Decided 2026-09-01. rnv3 pushes
   station events to any HTTP receiver — vendor-agnostic, documented in `docs/webhooks.md`:
   `pass.decoded` (+ one `pass.image` multipart per file), `pass.failed`, `pass.deleted`,
   `schedule.updated`, `station.stats` (5 min), `station.alert`; bearer secret per endpoint,
@@ -306,8 +308,8 @@ binary, unit file, udev rules, directories, SatDump.
   (Code complete 2026-09-01: `internal/publish` + `internal/hostinfo`, outbox migration 002,
   hooks in runner/scheduler/RemoveCapture/watchdog, `rnv3 -publish-test`, wizard "Event feed"
   section; permi: `app/api/station/webhook/route.ts`, `supabase/rnv3.sql`, decoded-only
-  listings, satellite name column. Exit: run `supabase/rnv3.sql`, set `STATION_TOKEN`, point
-  rnv3 at permi via Reconfigure, watch a pass land; then archive permi-images-syncing.)
+  listings, satellite name column. Exit met 2026-09-01: permi receives live passes, images and stats
+  from rnv3; permi-images-syncing is retired.)
 
 Development stays on Windows; every milestone validates on the Pi ("raspinoaa") — the deploy
 artifact is one binary, so the exec-bit / git-pull pain of the old flow disappears.
