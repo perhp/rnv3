@@ -283,6 +283,15 @@ binary, unit file, udev rules, directories, SatDump.
   wizard, configgen, install, cutover). `deploy.ps1` stays as the dev fast path.
   *Exit: a fresh Pi image → running station without opening a terminal on the Pi; your Pi →
   side-by-side install and cutover entirely from the tool.*
+  (Code complete 2026-09-01: `cmd/rnv3-setup` + `internal/setup` — SSH client with TOFU host
+  keys and password/keyboard-interactive auth, remote probe, RN2 `settings.yml` prefill (incl.
+  PHP→Go date formats and the admin password re-hashed), prompter with `--answers`/
+  `--save-answers`, wizard (essentials + 4 sections, every key round-trips through the daemon's
+  strict loader), installer orchestration (nohup + log tail with exit marker when sudo is
+  passwordless, pty + fed password otherwise), history import, journal wait, cutover with
+  typed confirmation, reconfigure with reload-vs-restart. `deploy/release.ps1` builds the
+  arm64 payload and embeds it: `dist\rnv3-setup.exe` ≈ 30 MB. Tested against an in-process
+  SSH server. The exit criterion — a run against the real Pi — is the same on-Pi work as M6.)
 
 Development stays on Windows; every milestone validates on the Pi ("raspinoaa") — the deploy
 artifact is one binary, so the exec-bit / git-pull pain of the old flow disappears.
