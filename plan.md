@@ -293,6 +293,17 @@ binary, unit file, udev rules, directories, SatDump.
   arm64 payload and embeds it: `dist\rnv3-setup.exe` ≈ 30 MB. Tested against an in-process
   SSH server. The exit criterion — a run against the real Pi — is the same on-Pi work as M6.)
 
+- [ ] **M8 — Event webhooks (retires permi-images-syncing).** Decided 2026-09-01. rnv3 pushes
+  station events to any HTTP receiver — vendor-agnostic, documented in `docs/webhooks.md`:
+  `pass.decoded` (+ one `pass.image` multipart per file), `pass.failed`, `pass.deleted`,
+  `schedule.updated`, `station.stats` (5 min), `station.alert`; bearer secret per endpoint,
+  `X-Rnv3-Event`/`X-Rnv3-Delivery` headers, JSON envelope with station identity. Pass events go
+  through a durable SQLite outbox with backoff (order kept per endpoint); state events are
+  fire-and-forget. Startup backfill of decoded passes newer than `publish.backfill_days` (31).
+  `rnv3-setup` asks for URL + secret. The permi website gets a receiver route
+  (`/api/station/webhook`) that maps the events onto its existing Supabase tables (+ satellite
+  name, SNR/frame stats, status columns), replacing the `permi-images-syncing` poller.
+
 Development stays on Windows; every milestone validates on the Pi ("raspinoaa") — the deploy
 artifact is one binary, so the exec-bit / git-pull pain of the old flow disappears.
 
