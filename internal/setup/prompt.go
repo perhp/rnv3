@@ -2,6 +2,7 @@ package setup
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,13 +28,18 @@ type Prompter struct {
 	Used map[string]string
 	// Fatal ends the run on unrecoverable input; nil prints and exits 2.
 	Fatal func(err error)
+	// Widgets provides the arrow-key menus on a real terminal; nil means
+	// the typed fallbacks (scripts, tests, pipes).
+	Widgets *terminalWidgets
 
 	eof bool
 }
 
-// NewPrompter wires stdin/stdout with hidden secret input on a terminal.
+// NewPrompter wires stdin/stdout with hidden secret input and the
+// interactive widgets when running on a terminal.
 func NewPrompter(answers map[string]string) *Prompter {
 	p := &Prompter{In: bufio.NewReader(os.Stdin), Out: os.Stdout, Answers: answers, Used: map[string]string{}}
+	p.Widgets = detectTerminal()
 	if term.IsTerminal(int(os.Stdin.Fd())) {
 		p.ReadSecret = func() (string, error) {
 			raw, err := term.ReadPassword(int(os.Stdin.Fd()))
@@ -140,8 +146,26 @@ func (p *Prompter) AskRequired(key, label, def string) string {
 	}
 }
 
+// widgetErr handles an interrupted widget.
+func (p *Prompter) widgetErr(err error) {
+	if errors.Is(err, errInterrupted) {
+		p.fail(errors.New("interrupted"))
+		return
+	}
+	p.fail(err)
+}
+
 // AskBool: y/n with a default.
 func (p *Prompter) AskBool(key, label string, def bool) bool {
+	if _, ok := p.canned(key); !ok && p.Widgets != nil {
+		v, err := p.Widgets.confirm(label, def)
+		if err != nil {
+			p.widgetErr(err)
+			return def
+		}
+		p.record(key, strconv.FormatBool(v))
+		return v
+	}
 	hint := "y/N"
 	if def {
 		hint = "Y/n"
@@ -244,6 +268,21 @@ func (p *Prompter) AskChoice(key, label string, options []string, def string) st
 		}
 		p.rejectCanned(key, v, "not one of "+strings.Join(options, ", "))
 	}
+	if p.Widgets != nil {
+		defIdx := 0
+		for i, o := range options {
+			if o == def {
+				defIdx = i
+			}
+		}
+		idx, err := p.Widgets.selectOne(label, options, defIdx)
+		if err != nil {
+			p.widgetErr(err)
+			return def
+		}
+		p.record(key, options[idx])
+		return options[idx]
+	}
 	fmt.Fprintf(p.Out, "%s:\n", label)
 	defIdx := 0
 	for i, o := range options {
@@ -319,6 +358,21 @@ func (p *Prompter) AskMulti(key, label string, options []string, selected map[st
 			p.record(key, v)
 			return out
 		}
+	}
+	if p.Widgets != nil {
+		state, err := p.Widgets.selectMany(label, options, out)
+		if err != nil {
+			p.widgetErr(err)
+			return out
+		}
+		var chosen []string
+		for _, o := range options {
+			if state[o] {
+				chosen = append(chosen, o)
+			}
+		}
+		p.record(key, strings.Join(chosen, ","))
+		return state
 	}
 	for {
 		fmt.Fprintf(p.Out, "%s (enter numbers to toggle, Enter to accept):\n", label)

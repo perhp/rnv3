@@ -73,7 +73,9 @@ self-contained installer for your PC. You only rebuild it when you update rnv3.
 .\dist\rnv3-setup.exe
 ```
 
-The tool asks a series of questions. Press **Enter** to accept the value shown in `[brackets]`.
+The tool asks a series of questions. Menus are driven with the **arrow keys** (Space toggles
+items in a list, Enter confirms, y/n or ←/→ for yes/no); for typed values, press **Enter** to
+accept the default shown in `[brackets]`.
 
 1. **Connect** — Pi hostname, SSH user, password. The first time it shows the Pi's SSH key
    fingerprint and asks you to trust it (it remembers the host and user for next time, never
