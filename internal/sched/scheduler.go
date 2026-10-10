@@ -47,11 +47,18 @@ func (s *Scheduler) Replan() {
 	}
 }
 
-// maxTLEAge before a refresh is forced at startup/replan time.
-const maxTLEAge = 24 * time.Hour
+// tleRefetchGap is the least time between two downloads of the TLE set:
+// Celestrak updates its element sets about every two hours and turns away
+// repeat downloads sooner than that.
+const tleRefetchGap = 2 * time.Hour
 
 // Run drives the scheduler until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) error {
+	// refreshed is the most recent daily TLE refresh time the loop has dealt
+	// with; the startup plan covers the one before startup. It is read
+	// before planning, so a startup that straddles the refresh time still
+	// leaves that refresh due.
+	refreshed := lastTLERefresh(s.prov.Get(), time.Now())
 	if err := s.plan(ctx); err != nil {
 		// Startup without network or TLEs is survivable: keep serving the web
 		// panel and retry planning on the next cycle.
@@ -66,19 +73,10 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return err
 		}
 
-		wake := s.nextTLERefresh(cfg, now)
-		wakeReason := "tle-refresh"
+		wake, wakeReason := nextWake(now, tleRefreshDue(cfg, refreshed, now), next)
 		if next != nil {
-			aos := time.Unix(next.StartTS, 0)
-			if aos.Before(now) {
-				aos = now // pass already in progress: capture the remaining window
-			}
-			if aos.Before(wake) {
-				wake = aos
-				wakeReason = "pass"
-			}
 			slog.Info("scheduler waiting", "until", wake.Format(time.RFC3339), "reason", wakeReason,
-				"next_pass", next.Satellite, "aos", aos.Format(time.RFC3339), "max_elev", int(next.MaxElevation))
+				"next_pass", next.Satellite, "aos", time.Unix(next.StartTS, 0).Format(time.RFC3339), "max_elev", int(next.MaxElevation))
 		} else {
 			slog.Info("scheduler waiting (no passes planned)", "until", wake.Format(time.RFC3339), "reason", wakeReason)
 		}
@@ -100,6 +98,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 				// pending is a no-op here.
 				s.runner.Run(ctx, *next, satByName(cfg, next.Satellite))
 			} else {
+				refreshed = lastTLERefresh(cfg, time.Now())
 				if err := s.plan(ctx); err != nil {
 					slog.Error("scheduled replan failed", "err", err)
 				}
@@ -117,8 +116,8 @@ func (s *Scheduler) plan(ctx context.Context) error {
 		ids = append(ids, sat.NoradID)
 	}
 
-	set, _, err := s.tles.Load()
-	needFetch := err != nil || s.tles.Age() > maxTLEAge
+	set, fetchedAt, err := s.tles.Load()
+	needFetch := err != nil || tleStale(cfg, fetchedAt, time.Now())
 	if !needFetch {
 		for _, id := range ids {
 			if _, ok := set[id]; !ok {
@@ -174,19 +173,56 @@ func (s *Scheduler) plan(ctx context.Context) error {
 	return nil
 }
 
-// nextTLERefresh returns the next daily refresh instant (configured UTC hour,
-// validated to 0..23 at config load; clamped anyway for defense in depth).
-func (s *Scheduler) nextTLERefresh(cfg *config.Config, now time.Time) time.Time {
+// nextWake picks what the loop sleeps until: the next pass's AOS or the TLE
+// refresh, whichever comes first. A pass already under way goes ahead of an
+// overdue refresh, so a slow download never eats into the capture.
+func nextWake(now, refreshDue time.Time, next *store.Pass) (time.Time, string) {
+	if next != nil {
+		aos := time.Unix(next.StartTS, 0)
+		if !aos.After(now) {
+			return now, "pass" // pass already in progress: capture the remaining window
+		}
+		if aos.Before(refreshDue) {
+			return aos, "pass"
+		}
+	}
+	return refreshDue, "tle-refresh"
+}
+
+// tleRefreshDue returns when the daily TLE refresh is next due: the most
+// recent refresh time if the loop has not handled it yet (a capture was
+// running when it came round), otherwise the one a day after it.
+func tleRefreshDue(cfg *config.Config, refreshed, now time.Time) time.Time {
+	last := lastTLERefresh(cfg, now)
+	if last.After(refreshed) {
+		return last
+	}
+	return last.Add(24 * time.Hour)
+}
+
+// tleStale reports whether a TLE set fetched at fetchedAt needs downloading
+// again: it predates the most recent daily refresh time. Measuring against
+// that instant, not a 24 h age, matters because the refresh fires at the
+// same time each day and finds the previous download a few seconds short
+// of 24 h old.
+func tleStale(cfg *config.Config, fetchedAt, now time.Time) bool {
+	return fetchedAt.Before(lastTLERefresh(cfg, now)) && now.Sub(fetchedAt) >= tleRefetchGap
+}
+
+// lastTLERefresh returns the most recent daily refresh instant at or before
+// now (configured UTC hour, validated to 0..23 at config load; clamped
+// anyway for defense in depth).
+func lastTLERefresh(cfg *config.Config, now time.Time) time.Time {
 	hour := cfg.Scheduling.TLERefreshHourUTC
 	if hour < 0 || hour > 23 {
 		hour = 0
 	}
 	u := now.UTC()
-	next := time.Date(u.Year(), u.Month(), u.Day(), hour, 1, 0, 0, time.UTC)
-	if !next.After(u) {
-		next = next.Add(24 * time.Hour)
+	last := time.Date(u.Year(), u.Month(), u.Day(), hour, 1, 0, 0, time.UTC)
+	if last.After(u) {
+		last = last.Add(-24 * time.Hour)
 	}
-	return next
+	return last
 }
 
 func satByName(cfg *config.Config, name string) config.Satellite {
