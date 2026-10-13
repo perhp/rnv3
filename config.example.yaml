@@ -87,7 +87,7 @@ scheduling:
   days_ahead: 7
   resolve_overlaps: true
   prefer_meteor_over_noaa: true
-  tle_refresh_hour_utc: 0
+  tle_refresh_hour_utc: 3          # daily TLE download at HH:37 UTC; failures retry every 30 min
   dry_run: false                   # true = plan passes but never touch the SDR (parallel-run mode)
 
 capture:

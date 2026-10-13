@@ -52,18 +52,28 @@ func (s *Scheduler) Replan() {
 // repeat downloads sooner than that.
 const tleRefetchGap = 2 * time.Hour
 
+// tleRetryInterval spaces out attempts while TLE downloads keep failing, so
+// an outage costs half an hour instead of the rest of the day.
+const tleRetryInterval = 30 * time.Minute
+
+// tleRefreshMinute is the minute past tle_refresh_hour_utc the daily
+// refresh runs at. Scheduled jobs cluster on the hour, and Celestrak timed
+// out and returned 503s at 00:01 UTC, so the refresh keeps well clear of it.
+const tleRefreshMinute = 37
+
 // Run drives the scheduler until ctx is cancelled.
 func (s *Scheduler) Run(ctx context.Context) error {
-	// refreshed is the most recent daily TLE refresh time the loop has dealt
-	// with; the startup plan covers the one before startup. It is read
-	// before planning, so a startup that straddles the refresh time still
-	// leaves that refresh due.
-	refreshed := lastTLERefresh(s.prov.Get(), time.Now())
-	if err := s.plan(ctx); err != nil {
+	// The startup plan stands in for the daily refresh time just before
+	// startup, taken before planning so a startup that straddles the
+	// refresh time still leaves that refresh due.
+	refresh := tleSchedule{refreshed: lastTLERefresh(s.prov.Get(), time.Now())}
+	failed, err := s.plan(ctx)
+	if err != nil {
 		// Startup without network or TLEs is survivable: keep serving the web
-		// panel and retry planning on the next cycle.
+		// panel and retry planning along with the TLE download.
 		slog.Error("initial planning failed; will retry", "err", err)
 	}
+	refresh.planned(failed, time.Now())
 
 	for {
 		cfg := s.prov.Get()
@@ -73,7 +83,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return err
 		}
 
-		wake, wakeReason := nextWake(now, tleRefreshDue(cfg, refreshed, now), next)
+		wake, wakeReason := nextWake(now, refresh.due(cfg, now), next)
 		if next != nil {
 			slog.Info("scheduler waiting", "until", wake.Format(time.RFC3339), "reason", wakeReason,
 				"next_pass", next.Satellite, "aos", time.Unix(next.StartTS, 0).Format(time.RFC3339), "max_elev", int(next.MaxElevation))
@@ -88,9 +98,11 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-s.replanCh:
 			timer.Stop()
-			if err := s.plan(ctx); err != nil {
+			failed, err := s.plan(ctx)
+			if err != nil {
 				slog.Error("replan failed", "err", err)
 			}
+			refresh.planned(failed, time.Now())
 		case <-timer.C:
 			if wakeReason == "pass" && next != nil {
 				// The runner claims the row scheduled→capturing atomically, so
@@ -98,18 +110,21 @@ func (s *Scheduler) Run(ctx context.Context) error {
 				// pending is a no-op here.
 				s.runner.Run(ctx, *next, satByName(cfg, next.Satellite))
 			} else {
-				refreshed = lastTLERefresh(cfg, time.Now())
-				if err := s.plan(ctx); err != nil {
+				refresh.refreshed = lastTLERefresh(cfg, time.Now())
+				failed, err := s.plan(ctx)
+				if err != nil {
 					slog.Error("scheduled replan failed", "err", err)
 				}
+				refresh.planned(failed, time.Now())
 			}
 		}
 	}
 }
 
 // plan refreshes TLEs when stale, sweeps zombie passes, and rebuilds +
-// persists the pass plan.
-func (s *Scheduler) plan(ctx context.Context) error {
+// persists the pass plan. The bool reports a TLE download that was needed
+// but failed, for the loop to retry.
+func (s *Scheduler) plan(ctx context.Context) (bool, error) {
 	cfg := s.prov.Get()
 	var ids []int
 	for _, sat := range cfg.EnabledSatellites() {
@@ -126,13 +141,15 @@ func (s *Scheduler) plan(ctx context.Context) error {
 			}
 		}
 	}
+	tleFailed := false
 	if needFetch {
 		fresh, ferr := s.tles.Refresh(ctx, ids)
 		if ferr != nil {
 			if set == nil {
-				return ferr // no cache and no network: cannot plan at all
+				return true, ferr // no cache and no network: cannot plan at all
 			}
 			slog.Warn("TLE refresh failed, planning with cached set", "age", s.tles.Age().Round(time.Minute), "err", ferr)
+			tleFailed = true
 		} else {
 			set = fresh
 		}
@@ -152,10 +169,10 @@ func (s *Scheduler) plan(ctx context.Context) error {
 
 	cands, err := BuildPlan(cfg, set, now)
 	if err != nil {
-		return err
+		return tleFailed, err
 	}
 	if err := s.st.ReplaceFuturePlan(now, ToStorePasses(cands)); err != nil {
-		return err
+		return tleFailed, err
 	}
 	scheduled, skipped := 0, 0
 	for _, c := range cands {
@@ -170,7 +187,7 @@ func (s *Scheduler) plan(ctx context.Context) error {
 	if s.OnPlanUpdated != nil {
 		s.OnPlanUpdated(ctx)
 	}
-	return nil
+	return tleFailed, nil
 }
 
 // nextWake picks what the loop sleeps until: the next pass's AOS or the TLE
@@ -189,15 +206,35 @@ func nextWake(now, refreshDue time.Time, next *store.Pass) (time.Time, string) {
 	return refreshDue, "tle-refresh"
 }
 
-// tleRefreshDue returns when the daily TLE refresh is next due: the most
-// recent refresh time if the loop has not handled it yet (a capture was
-// running when it came round), otherwise the one a day after it.
-func tleRefreshDue(cfg *config.Config, refreshed, now time.Time) time.Time {
+// tleSchedule tracks when the loop next downloads TLEs.
+type tleSchedule struct {
+	refreshed time.Time // most recent daily refresh time the loop has dealt with
+	retryAt   time.Time // while a download is failing: when to try again
+}
+
+// due returns when the next TLE download is due: a pending retry, or the
+// most recent daily refresh time if the loop has not dealt with it yet (a
+// capture was running when it came round), or else the one after it.
+func (t tleSchedule) due(cfg *config.Config, now time.Time) time.Time {
 	last := lastTLERefresh(cfg, now)
-	if last.After(refreshed) {
-		return last
+	due := last.Add(24 * time.Hour)
+	if last.After(t.refreshed) {
+		due = last
 	}
-	return last.Add(24 * time.Hour)
+	if !t.retryAt.IsZero() && t.retryAt.Before(due) {
+		due = t.retryAt
+	}
+	return due
+}
+
+// planned records whether a plan's TLE download failed: a failure is
+// retried after tleRetryInterval, a success (or no download needed) clears
+// any pending retry.
+func (t *tleSchedule) planned(failed bool, now time.Time) {
+	t.retryAt = time.Time{}
+	if failed {
+		t.retryAt = now.Add(tleRetryInterval)
+	}
 }
 
 // tleStale reports whether a TLE set fetched at fetchedAt needs downloading
@@ -218,7 +255,7 @@ func lastTLERefresh(cfg *config.Config, now time.Time) time.Time {
 		hour = 0
 	}
 	u := now.UTC()
-	last := time.Date(u.Year(), u.Month(), u.Day(), hour, 1, 0, 0, time.UTC)
+	last := time.Date(u.Year(), u.Month(), u.Day(), hour, tleRefreshMinute, 0, 0, time.UTC)
 	if last.After(u) {
 		last = last.Add(-24 * time.Hour)
 	}

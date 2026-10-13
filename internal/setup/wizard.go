@@ -393,7 +393,7 @@ func (w *Wizard) advanced(cfg *config.Config) {
 	if cfg.Scheduling.ResolveOverlaps {
 		cfg.Scheduling.PreferMeteorOverNOAA = p.AskBool("scheduling.prefer_meteor_over_noaa", "  Prefer Meteor over NOAA on overlap", cfg.Scheduling.PreferMeteorOverNOAA)
 	}
-	cfg.Scheduling.TLERefreshHourUTC = p.AskInt("scheduling.tle_refresh_hour_utc", "Daily TLE refresh hour (UTC)", cfg.Scheduling.TLERefreshHourUTC)
+	cfg.Scheduling.TLERefreshHourUTC = p.AskInt("scheduling.tle_refresh_hour_utc", "Daily TLE refresh hour (UTC, runs at :37)", cfg.Scheduling.TLERefreshHourUTC)
 	cfg.Capture.NOAAMemoryThresholdMB = p.AskInt("capture.noaa_memory_threshold_mb", "Buffer NOAA captures in RAM when this much is free (MB, 0 = never)", cfg.Capture.NOAAMemoryThresholdMB)
 	cfg.Capture.MeteorMemoryThresholdMB = p.AskInt("capture.meteor_memory_threshold_mb", "Buffer Meteor captures in RAM when this much is free (MB, 0 = never)", cfg.Capture.MeteorMemoryThresholdMB)
 

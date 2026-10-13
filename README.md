@@ -391,8 +391,8 @@ followed. `no recording produced` usually means the SDR was not found — check
 `plugdev` (the installer adds it; log out and in again).
 
 **Panel shows no passes**
-TLEs could not be fetched (no internet at start?). rnv3 retries; the idle terminal shows the
-TLE age. Force a replan with `sudo systemctl reload rnv3`.
+TLEs could not be fetched (no internet at start?). rnv3 retries every 30 minutes; the idle
+terminal shows the TLE age. Force a replan with `sudo systemctl reload rnv3`.
 
 **Images come out upside-down / mirrored for Meteor**
 `processing.meteor.flip_northbound` — same setting RN2 had.

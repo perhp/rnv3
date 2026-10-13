@@ -352,7 +352,7 @@ func Default() *Config {
 			DaysAhead:            7,
 			ResolveOverlaps:      true,
 			PreferMeteorOverNOAA: true,
-			TLERefreshHourUTC:    0,
+			TLERefreshHourUTC:    3,
 		},
 		Capture: Capture{
 			NOAAMemoryThresholdMB:   50,
